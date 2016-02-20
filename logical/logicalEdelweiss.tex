@@ -23,6 +23,8 @@
 
 \pagestyle{fancy}
 
+\numberwithin{equation}{section}
+
 
 \newtheorem{theorem}{Theorem}[section]
 \newtheorem{thm}[theorem]{Theorem}
@@ -454,7 +456,73 @@ Furthermore, Thm \ref{thm:logicalcorrectness} tells us that for output sets with
 $\square$
 \end{proof}
 
+\subsection{Examples}
+\begin{example}[Instantiated Trivial GC]
+$\tt{GCIcopy(A$_I$, f, B$_I$)} = \emptyset$.
+\end{example}
 
+\begin{example}[Instantiated Copy GC]
+$\tt{GCIcopy(A$_I$, Id, B$_{1,I}$, $\dots$, B$_{k,I}$)} = \tt{A}_I \cap \bigcap_{i=1}^k \tt{B}_{i,I}$.
+\end{example}
+The $\tt{GCcopy}$ rule creates tombstones for $\tt{A}_\top \cup \left(\tt{A}_\exists \cap \bigcap_{i=1}^k (\tt{B}_{i,\exists} \cup \tt{B}_{i,\top})\right)$.
+From the Representation Invariant \ref{inv:representation}, we know $\tt{A}_\exists \subseteq \tt{A}_I \subseteq \tt{A}_\exists \cup \tt{A}_\top$ and $\tt{B}_\exists \subseteq \tt{B}_I \subseteq \tt{B}_\exists \cup \tt{B}_\top$.
+Thus,
+\begin{align*}
+\tt{A}_I \cap \bigcap_{i=1}^k \tt{B}_{i,I}
+~\subseteq~ (\tt{A} \cup \tt{A}_\top) \cap \bigcap_{i=1}^k (\tt{B}_\exists \cup \tt{B}_\top)
+~\subseteq~ (\tt{A} \cup \tt{A}_\top) \cap \left(\tt{A}_\top \cup \bigcap_{i=1}^k (\tt{B}_\exists \cup \tt{B}_\top)\right)
+~=~ \tt{A}_\top \cup \left(\tt{A}_\exists \cap \bigcap_{i=1}^k (\tt{B}_{i,\exists} \cup \tt{B}_{i,\top})\right),
+\end{align*}
+so $\tt{GCIcopy}$ satisfies the Instantiated GC Safe Deletion Property \ref{prp:gcisafe}.
+
+\begin{example}[Instantiated Max GC]
+$\tt{GCImax(A$_I$, f, B$_I$)} = \tilde{\tt{A}}$, where $\tilde{\tt{A}} \subseteq \tt{A}_I$ is a set satisfying
+\begin{align}
+\forall\hat{\tt{A}} \supseteq \tt{A}_I - \tilde{\tt{A}},
+\quad \tt{f($\hat{\tt{A}}$)} \cup \tt{B}_I = \tt{f($\hat{\tt{A}}$ $\cup$ $\tilde{\tt{A}}$)} \cup \tt{B}_I,\label{eq:gcimax1}
+\end{align}
+and for all $\tt{A}_\text{TS}'$ satisfying the GC Invariant \ref{inv:gci} Eq \ref{eq:gcinv1},\label{eq:gcimax2}
+\begin{align}
+\forall \hat{\tt{A}} \supseteq \tt{A}_I \cup \tt{A}_\exists' - (\tilde{\tt{A}} \cup \tt{A}_\top'),
+\quad \tt{f($\hat{\tt{A}}$)} \cup \tt{B}_I = \tt{f($\hat{\tt{A}}$ $\cup$ $\tilde{\tt{A}}$ $\cup$ \tt{A}$_\top'$)} \cup \tt{B}_I
+\end{align}
+\end{example}
+We first point out that the $\tt{GCImax}$ rule does not require knowledge of the value of any actual $\tt{A}_\text{TS}'$, as it has to hold true for \textit{all} such sets.
+
+Next, we show that $\tilde{\tt{A}} \cup \tt{A}_\top$ satisfies conditions Eq \eqref{eq:maxgc1} and \eqref{eq:maxgc2}.
+The first condition Eq \eqref{eq:gcimax1}, together with the fact that $\tt{B}_I \subseteq \tt{B}_\top \cup \tt{B}_\exists$ implies that
+\begin{align*}
+\forall\hat{\tt{A}} \supseteq \tt{A}_I - \tilde{\tt{A}},
+\quad \tt{f($\hat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top = \tt{f($\hat{\tt{A}}$ $\cup$ $\tilde{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top,
+\end{align*}
+so $(\emptyset, \tt{A}_I - \tilde{\tt{A}}, \tilde{\tt{A}})$ satisfy GC Invariant \ref{inv:gci} Eq \ref{eq:gcinv1}.
+Applying Eq \ref{eq:gcinv2}, we get
+\begin{align*}
+&\forall \hat{\tt{A}}
+  ~~\supseteq~~ \tt{A}_\exists \cup (\tt{A}_I - \tilde{\tt{A}}) - (\tt{A}_\top \cup \tilde{\tt{A}})
+  ~~=~~ \tt{A}_\exists - (\tt{A}_\top \cup \tilde{\tt{A}}),\\
+&\tt{f($\hat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top
+  ~~=~~ \tt{f($\hat{\tt{A}}$ $\cup$ A$_\top$ $\cup$ $\tilde{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top,
+\end{align*}
+thus satisfying Eq \eqref{eq:maxgc1} with tombstones $\tilde{\tt{A}} \cup \tt{A}_\top$. Similarly, Eq \eqref{eq:gcimax2} implies
+\begin{align}
+\forall \hat{\tt{A}} \supseteq \tt{A}_I \cup \tt{A}_\exists' - (\tilde{\tt{A}} \cup \tt{A}_\top'),
+\quad \tt{f($\hat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top = \tt{f($\hat{\tt{A}}$ $\cup$ $\tilde{\tt{A}}$ $\cup$ \tt{A}$_\top'$)} \cup \tt{B}_\exists \cup \tt{B}_\top,
+\end{align}
+so $(\emptyset, \tt{A}_I \cup \tt{A}_\exists' - (\tilde{\tt{A}} \cup \tt{A}_\top'), \tilde{\tt{A}} \cup \tt{A}_\top')$ satisfy GC Invariant \ref{inv:gci} Eq \ref{eq:gcinv1}.
+Applying Eq \ref{eq:gcinv2}, we get
+\begin{align*}
+&\forall \hat{\tt{A}}
+  ~~\supseteq~~ \tt{A}_\exists \cup (\tt{A}_I \cup \tt{A}_\exists' - (\tilde{\tt{A}} \cup \tt{A}_\top')) - (\tt{A}_\top \cup \tilde{\tt{A}} \cup \tt{A}_\top')
+  ~~=~~ \tt{A}_\exists \cup \tt{A}_\exists' - (\tt{A}_\top \cup \tilde{\tt{A}} \cup \tt{A}_\top'),\\
+&\tt{f($\hat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top = \tt{f($\hat{\tt{A}}$ $\cup$ A$_\top$ $\cup$ $\tilde{\tt{A}}$ $\cup$ \tt{A}$_\top'$)} \cup \tt{B}_\exists \cup \tt{B}_\top
+\end{align*}
+thus satisfying Eq \eqref{eq:maxgc2} with tombstones $\tilde{\tt{A}} \cup \tt{A}_\top$.
+We have therefore shown that $\tt{GCImax(A$_I$, f, B$_I$)} = \tilde{\tt{A}} \subseteq \tilde{\tt{A}} \cup \tt{A}_\top \subseteq \tt{GCmax(A$_\text{TS}$, f, B$_\text{TS}$)}$ due to the maximality of $\tt{GCmax}$.
+
+\begin{example}[Instantiated Tuple-based GC]
+$\tt{GCItuple(A$_I$, f, B$_I$)} = \{t \in \tt{A}_I ~:~ \forall \tt{X}, \tt{f(X $\cup$ $\{t\}$)} - \tt{f(X)} \subseteq \tt{B}_I\}$
+\end{example}
 \section{Putting it together}
 
 %\end{document}  % This is where a 'short' article might terminate
