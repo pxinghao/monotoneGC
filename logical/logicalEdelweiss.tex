@@ -97,6 +97,20 @@ This invariance ensures that the instantiated representation corresponds to the 
 However, we do not require the representation to be monotone; in particular, a deleted tombstone tuple could potentially be re-instantiated without affecting the correctness of the program.
 Nevertheless, since we are maintaining equivalence to the logical, monotone program, we may execute operations in a coordination-free manner.
 
+\section{Preliminaries}
+\subsection{Tombstones}
+\subsection{Copy rules --- reduction for multi-output sets}
+\subsection{Reduction for multi-input rules}
+Consider the rule $\tt{B <= f(A$_1$, $\dots$, A$_k$)}$.
+Instead of working with $k$ input sets, we can define a set $\tt{A}$ such that $(i, a) \in \tt{A} \iff a \in \tt{A}$.
+We may then replace the rule with $\tt{B <= f(A)}$, and introduce rules $\tt{A <= map($A_i$, $i$)}$, where $\tt{map(S, j)} = \{(j, s) ~:~ s\in \tt{S}\}$.
+(Note that this rule can be garbage collected almost immediately, and should not incurred additional storage.)
+
+Alternatively, we can modify the input rules to $\tt{A}_i$'s.
+In conjunction with the copy rules, each $\tt{A}_i$ should participate as input only to $\tt{f}$.
+Hence, for each rule $\tt{A}_i \tt{ <= } \tt{g($\dots$)}$, we replace with $\tt{A} \tt{ <= } \tt{map(g($\dots$), $i$)}$.
+
+
 \section{Logical rewrite}
 In this section, we present a logical rewrite of the original program.
 We first endow all sets with `tombstone' sets -- intuitively, tombstoned tuples are that which we may safely delete without affecting the outcome of our program.
@@ -523,7 +537,10 @@ We have therefore shown that $\tt{GCImax(A$_I$, f, B$_I$)} = \tilde{\tt{A}} \sub
 \begin{example}[Instantiated Tuple-based GC]
 $\tt{GCItuple(A$_I$, f, B$_I$)} = \{t \in \tt{A}_I ~:~ \forall \tt{X}, \tt{f(X $\cup$ $\{t\}$)} - \tt{f(X)} \subseteq \tt{B}_I\}$
 \end{example}
-\section{Putting it together}
+
+\subsection{Putting it together}
+Our instantiated representation preserves correctness, and allows for GC opportunities.
+While it is not monotone in the representation, it tracks the monotone logical program, and thus our GC operations can be performed coordination-free.
 
 %\end{document}  % This is where a 'short' article might terminate
 \newpage
