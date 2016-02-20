@@ -1,0 +1,8 @@
+logical/*.aux
+logical/*.bbl
+logical/*.blg
+logical/*.fdb_latexmk
+logical/*.fls
+logical/*.log
+logical/*.pdf
+logical/*.synctex.gz
