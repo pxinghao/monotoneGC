@@ -1,0 +1,461 @@
+% THIS IS AN EXAMPLE DOCUMENT FOR VLDB 2012
+% based on ACM SIGPROC-SP.TEX VERSION 2.7
+% Modified by  Gerald Weber <gerald@cs.auckland.ac.nz>
+% Removed the requirement to include *bbl file in here. (AhmetSacan, Sep2012)
+% Fixed the equation on page 3 to prevent line overflow. (AhmetSacan, Sep2012)
+
+\documentclass[10pt]{proc}
+\usepackage{graphicx}
+\usepackage{balance}  % for  \balance command ON LAST PAGE  (only there!)
+
+% \let\proof\relax
+% \let\endproof\relax
+\usepackage{csquotes}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{float}
+\usepackage{listings}
+\usepackage{fancyhdr}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  mathescape
+}
+
+\pagestyle{fancy}
+
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{thm}[theorem]{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corr}[theorem]{Corollary}
+\newtheorem{claim}[theorem]{Claim}
+\newtheorem{axiom}[theorem]{Axiom}
+\newtheorem{conj}[theorem]{Conjecture}
+
+\newtheorem{defn}{Definition}[section]
+
+\newtheorem{rmk}{Remark}[section]
+\newtheorem{example}{Example}[section]
+\newtheorem{property}{Property}[section]
+\newtheorem{invariant}[property]{Invariant}
+
+\newenvironment{proof}[1][Proof]{\begin{trivlist}\item[\hskip \labelsep {\textit {#1:}}]}{\end{trivlist}}
+
+
+\renewcommand{\tt}[1]{\ifmmode\text{\texttt{#1}}\else\texttt{#1}\fi}
+
+
+\begin{document}
+\onecolumn
+\begin{center}
+{\LARGE Automated Monotone GC for Distributed Programming}
+\\{\large Xinghao Pan\\xinghao@eecs.berkeley.edu}
+\end{center}
+\fancyhead{}
+\fancyfoot{}
+\lhead{xinghao@eecs.berkeley.edu}
+\rhead{\today}
+\cfoot{\thepage}
+
+
+
+
+\begin{abstract}
+Edelweiss \cite{conway2014edelweiss} provides automatic garbage collection for event log exhanges, programs which monotonically accumulate logs.
+However, in the process of doing so, it introduced additional points of coordination through non-monotone operations, thereby defeating the original purpose of ELEs to avoid synchronization and coordination.
+In this paper, we show that garbage collection for ELEs can in fact be monotone and coordination-free.
+We explicitly recast Edelweiss techniques as monotone operations on lattices defined over the input sets.
+\end{abstract}
+
+\section{Approach}
+Plan of attack:
+\begin{enumerate}
+\item Promote all operations to tombstone sets.
+\item Add (logical) GC rules.
+  \begin{itemize}
+  \item Require that GC rules maintain a GC invariant, are monotone, and conservative (only promotes $\exists$ to $\top$ and not create new tuples)
+  \item Show that rewritten (logical) program is correct, monotone, and preserves GC invariant.
+  \end{itemize}
+\item Instantiate representation, add GC-instantiated (GCI) rules.
+  \begin{itemize}
+  \item Require GCI rules delete only things that are (logically) tombstoned.
+  \item Show that representation maintains invariant -- always keeps $\exists$ but possibly also tombstoned tuples.
+  \end{itemize}
+\end{enumerate}
+
+Our approach proceeds in two phases.
+Firstly, we add (logical) rules that identifies `tombstone' tuples -- these are tuples whose removal does not affect the correctness of the program, in the sense that the output sets in the rewritten program are unaffected.
+We further require that the GC rules are monotone.
+
+The second phase then rewrites the program to perform the actual deletion.
+Here, we ensure that deleted tuples are tombstoned, but tombtoned tuples are not necessarily deleted.
+This invariance ensures that the instantiated representation corresponds to the logical program in the first phase, and in particular, instantiated representations of the output sets (which have no tombstones) are correct.
+
+However, we do not require the representation to be monotone; in particular, a deleted tombstone tuple could potentially be re-instantiated without affecting the correctness of the program.
+Nevertheless, since we are maintaining equivalence to the logical, monotone program, we may execute operations in a coordination-free manner.
+
+\section{Logical rewrite}
+In this section, we present a logical rewrite of the original program.
+We first endow all sets with `tombstone' sets -- intuitively, tombstoned tuples are that which we may safely delete without affecting the outcome of our program.
+We then add logical GC rules that define how we can identify and mark tombstoned tuples.
+The logical GC rules have to obey certain properties which will ensure correctness and monotonicity.
+
+In the remainder of this write-up, we will consider rewrite the general rule, for arbitrary \tt{A}:
+\begin{align}
+\tt{B} &\tt{ <= f(A)}
+\end{align}
+Note that we do not require \tt{f} to be monotone.
+In cases where \tt{f} is non-monotone, the program remains non-monotone; however, our rewrites do not introduce additional non-monotone operations, and thus there are no new points of order added.
+\footnote{I believe, however, that we will require that any set that appears as an input is monotonically growing, i.e. there are no deletions. This should be guaranteed by Edelweiss's requirement that there are no deletion rules.}
+For simplicity, we will assume that each input set only participates in one rule -- we avoid multi-output situations by using copy rules, and handle copy rules separately.
+
+\subsection{Adding tombstones}
+Our first step is to lift all sets to a 3-phase set by endowing with an additional `tombstone' state.
+Instead of having a single set \tt{A}, we use a tuple $\tt{A}_\text{TS} = (\tt{A}_\neg, \tt{A}_\exists, \tt{A}_\top)$ of three mutually exclusive sets.
+Intuitively, tuples in $\tt{A}_\top$ are those that would have been in the original set $\tt{A}$, but are now also marked for reclamation.
+Conversely, tuples in $\tt{A}_\exists$ are also in $\tt{A}$ but not marked for reclamation.
+
+
+\subsection{Logical garbage collection}
+Armed with this lifted representation, we can now provide a rewrite of the original program, together with an additional GC rule for each rule.
+\begin{align}
+\text{Forward rule: } && \tt{B}_\text{TS} &\tt{ <= $\exists$(f(A$_\exists$ $\cup$ A$_\top$))}\label{eq:forwardrule}\\
+\text{GC rule: } && \tt{A}_\text{TS} &\tt{ <= GC(A$_\text{TS}$, f, B$_\text{TS}$)}\label{eq:gcrule}
+\end{align}
+The function $\exists(\tt{S})$ takes a set \tt{S} and returns $(\emptyset, \tt{S}, \emptyset)$, and is a monotone function.
+The \tt{GC} function takes TS sets and the functional relationship, and returns a new TS set with additional tombstoned tuples.
+We will make this notion formal below.
+
+For this rewrite to preserve correctness and monotonicity, we will require that the following invariance is maintained by the forward rule, the GC rule, and under arbitrary merges.
+\begin{invariant}[GC Invariance]\label{inv:gci}
+For any set $\tt{A}$ that participates in rules $\tt{B$_i$ <= f$_i$(A)}$ for $i = 1, \dots, k$, we require
+\begin{align}
+\forall i,~~ \forall\hat{\tt{A}} \supseteq \tt{A}_\exists,
+\quad \tt{f$_i$($\hat{\tt{A}}$)} \cup \tt{B}_{i,\exists} \cup \tt{B}_{i,\top} = \tt{f$_i$($\hat{\tt{A}} \cup \tt{A}_\top$)} \cup \tt{B}_{i,\exists} \cup \tt{B}_{i,\top} \label{eq:gcinv1}
+\end{align}
+Furthermore, for $\tt{A}_\text{TS}$ and $\tt{A}_\text{TS}'$ satisfying Eq \eqref{eq:gcinv1}, it must be that
+\begin{align}
+\forall i,~~ \forall\hat{\tt{A}} \supseteq \tt{A}_\exists \cup \tt{A}_\exists' - (\tt{A}_\top \cup \tt{A}_\top'),
+\quad \tt{f$_i$($\hat{\tt{A}}$)} \cup \tt{B}_{i,\exists} \cup \tt{B}_{i,\top} = \tt{f$_i$($\hat{\tt{A}} \cup \tt{A}_\top \cup \tt{A}_\top'$)} \cup \tt{B}_{i,\exists} \cup \tt{B}_{i,\top} \label{eq:gcinv2}
+\end{align}
+\end{invariant}
+Eq \eqref{eq:gcinv1} ensures that any tombstoned tuple can be safely deleted, since any tuple it may generate (for any possible future input) is already present in the output set, and thus the tombstoned tuple has no downstream effect.
+The second condition Eq \eqref{eq:gcinv2} is required to ensure that Eq \eqref{eq:gcinv1} is preserved under merges for input sets $\tt{A}_\text{TS}$.
+
+Additionally, we require that the \tt{GC} rule have the properties stated below.
+\begin{property}[GC Rule Invariance]\label{prp:gcrinvariance}
+Any GC rule must maintain Invariant \ref{inv:gci}.
+\end{property}
+\begin{property}[GC Rule Monotonicity]\label{prp:gcrmonotone}
+Suppose $\tt{A}_\text{TS} \leq \tt{A}_\text{TS}'$, and $\tt{B}_\text{TS} \leq \tt{B}_\text{TS}'$.
+If $(\tt{A}_\text{TS}, \tt{B}_\text{TS})$ and $(\tt{A}_\text{TS}', \tt{B}_\text{TS}')$ both satisfy GC Invariant \ref{inv:gci}, then $\tt{GC(A, f, B)} \leq \tt{GC(A', f, B')}$.
+\end{property}
+\begin{property}[GC Rule Conservation]\label{prp:gcrconserve}
+Let $\tt{G}_\text{TS} = (\tt{G}_\neg, \tt{G}_\exists, \tt{G}_\top) = \tt{GC(A, f, B)}$.
+Then it must be the case that $\tt{G}_\exists \subseteq \tt{A}_\exists$, and $\tt{A}_\top \subseteq \tt{G}_\top \subseteq \tt{A}_\exists \cup \tt{A}_\top$, and $\tt{G}_\exists \cup \tt{G}_\top = \tt{A}_\exists \cup \tt{A}_\top$.
+\end{property}
+
+Property \ref{prp:gcrmonotone} ensures that the GC rules are monotone, and Property \ref{prp:gcrconserve} only moves tuples from $\tt{A}_\exists$ to $\tt{A}_\top$.
+
+\subsubsection{Examples}
+While the above properties are reasonable expectations of garbage collection rules, it is not obvious that there are useful rules that satisfy them.
+We now show some examples of such rules.
+
+\begin{example}[Trivial GC]
+$\tt{GC(A$_\text{TS}$, f, B$_\text{TS}$)} = \tt{A}_\text{TS}$.
+\end{example}
+
+\begin{example}[Copy GC]
+$\tt{GC(A$_\text{TS}$, Id, A$_{1,\text{TS}}$, $\dots$, , A$_{k,\text{TS}}$)} = (\emptyset, \tt{A}_\exists - \tt{A}_\cap, \tt{A}_\top \cup \tt{A}_\cap)$, where $\tt{A}_\cap = \bigcap_{i=1}^k (\tt{A}_{i,\exists} \cup \tt{A}_{i,\top})$.
+\end{example}
+
+\begin{example}[Max GC]
+$\tt{GCmax(A$_\text{TS}$, f, B$_\text{TS}$)} = (\emptyset, \tt{A}_\exists - \tilde{\tt{A}}, \tilde{\tt{A}})$ where $\tt{A}_\top \subseteq \tilde{\tt{A}} \subseteq \tt{A}_\exists \cup \tt{A}_\top$ is the (unique) largest set such that
+\begin{align}
+\forall\hat{\tt{A}} \supseteq \tt{A}_\exists - \tilde{\tt{A}}, \quad \tt{f($\hat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top = \tt{f($\hat{\tt{A}} \cup \tilde{\tt{A}} \cup \tt{A}_\top$)} \cup \tt{B}_\exists \cup \tt{B}_\top,\label{eq:maxgc1}
+\end{align}
+and for any $\tt{A}_\text{TS}'$ satisfying the GC Invariant \ref{inv:gci} Eq \eqref{eq:gcinv1},
+\begin{align}
+\forall\hat{\tt{A}} \supseteq \tt{A}_\exists \cup \tt{A}_\exists' - ({\tilde{\tt{A}} \cup \tt{A}_\top} \cup \tt{A}_\top'), \quad \tt{f($\hat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top = \tt{f($\hat{\tt{A}} \cup \tilde{\tt{A}} \cup \tt{A}_\top \cup \tt{A}_\top'$)} \cup \tt{B}_\exists \cup \tt{B}_\top.\label{eq:maxgc2}
+\end{align}
+\end{example}
+
+The \tt{GCmax} rule returns the largest set of tombstones that can be safely deleted without interfering with other tombstones.
+It also most directly attempts to maintain the GC invariant.
+
+For this rule to make sense, we need to show that it is in fact well-defined, i.e., there is a unique largest set that achieves the conditions.
+Suppose there are sets $\tt{X}$ and $\tt{Y}$ that achieve both conditions.
+Then $\tt{Z} = \tt{X} \cup \tt{Y}$ also fulfills our two conditions.
+First, note that since $\tt{X}$ and $\tt{Y}$ both satisfy Eq \eqref{eq:maxgc1} and Eq \eqref{eq:maxgc2}, the TS sets $(\tt{A}_\neg, \tt{A}_\exists - \tt{X}, \tt{X} \cup \tt{A}_\top)$ and $(\tt{A}_\neg, \tt{A}_\exists - \tt{Y}, \tt{Y} \cup \tt{A}_\top)$ satisfy Invariant \ref{inv:gci}.
+Applying Eq \eqref{eq:maxgc2}, we have
+\begin{align*}
+&\forall\hat{\tt{A}}
+  ~~\supseteq~~ \tt{A}_\exists \cup (\tt{A}_\exists - \tt{Y}) - (\tt{X} \cup \tt{A}_\top \cup \tt{Y} \cup \tt{A}_\top')
+  ~~=~~ \tt{A}_\exists - (\tt{X} \cup \tt{Y})
+  ~~=~~ \tt{A}_\exists - \tt{Z},\\
+&\tt{f($\hat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top
+  ~~=~~ \tt{f($\hat{\tt{A}} \cup \tt{X} \cup \tt{A}_\top$)} \cup \tt{B}_\exists \cup \tt{B}_\top
+  ~~=~~ \tt{f($\hat{\tt{A}} \cup \tt{X} \cup \tt{Y} \cup \tt{A}_\top \cup \tt{A}_\top'$)} \cup \tt{B}_\exists \cup \tt{B}_\top,
+\end{align*}
+where we have used the fact that $\hat{\tt{A}} \cup \tt{X} \cup \tt{A}_\top \cup \tt{A}_\top' \supseteq \tt{A}_\exists - \tt{Y}$ and Eq \eqref{eq:maxgc1} for $\tt{Y}$.
+Hence, $\tt{Z}$ satisfies Eq \eqref{eq:maxgc1}.
+
+Furthermore, for any $\tt{A}_\text{TS}'$ satisfying the GC Invariant \ref{inv:gci} Eq \eqref{eq:gcinv1}, applying Eq \eqref{eq:maxgc2} to \tt{X}, we get
+\begin{align*}
+&\forall\hat{\tt{A}}
+  ~~\supseteq~~ \tt{A}_\exists \cup \tt{A}_\exists' - (\tt{X} \cup \tt{A}_\top \cup \tt{A}_\top'),
+&\tt{f($\hat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top
+  ~~=~~ \tt{f($\hat{\tt{A}} \cup \tt{X} \cup \tt{A}_\top \cup \tt{A}_\top'$)} \cup \tt{B}_\exists \cup \tt{B}_\top,
+\end{align*}
+so $\tt{A}_\text{TS}'' = (\emptyset, (\tt{A}_\exists \cup \tt{A}_\exists') - (\tt{X} \cup \tt{A}_\top \cup \tt{A}_\top'), \tt{X} \cup \tt{A}_\top \cup \tt{A}_\top')$ satisfies Eq \eqref{eq:gcinv1}.
+We can then apply Eq \eqref{eq:maxgc2} to $\tt{Y}$:
+\begin{align*}
+&\forall\hat{\tt{A}}
+  ~~\supseteq~~ \tt{A}_\exists \cup \tt{A}_\exists'' - (\tt{Y} \cup \tt{A}_\top \cup \tt{A}_\top'')
+  ~~=~~ \tt{A}_\exists \cup \tt{A}_\exists' - (\tt{X} \cup \tt{Y} \cup \tt{A}_\top \cup \tt{A}_\top'),\\
+&\tt{f($\hat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top
+  ~~=~~ \tt{f($\hat{\tt{A}} \cup \tt{Y} \cup \tt{A}_\top \cup \tt{A}_\top''$)} \cup \tt{B}_\exists \cup \tt{B}_\top
+  ~~=~~ \tt{f($\hat{\tt{A}} \cup \tt{X} \cup \tt{Y} \cup \tt{A}_\top \cup \tt{A}_\top'$)} \cup \tt{B}_\exists \cup \tt{B}_\top.
+\end{align*}
+Hence $\tt{Z}$ also satisfies Eq \eqref{eq:maxgc2}.
+Thus, there is a unique largest set that achieves Eq \eqref{eq:maxgc1} and \eqref{eq:maxgc2}.
+
+It is easy to see $\tt{GCmax}$ maintains the GC Invariant \ref{inv:gci}, since Eq \eqref{eq:maxgc1} satisfies Eq \eqref{eq:gcinv1} and Eq \eqref{eq:maxgc2} satisfies Eq \eqref{eq:gcinv2}.
+Similarly, the GC Rule Conservation Property \ref{prp:gcrconserve} is also maintained by the choice of $\tt{A}_\top \subseteq \tilde{\tt{A}} \subseteq \tt{A}_\exists \cup \tt{A}_\top$.
+
+To show monotonicity, suppose we have $\tt{A}_\text{TS} \leq \tt{A}_\text{TS}'$ and $\tt{B}_\text{TS} \leq \tt{B}_\text{TS}'$.
+Monotonicity in the $\tt{B}$ argument is easy: Eq \eqref{eq:maxgc1} and \eqref{eq:maxgc2} for $\tt{B}_\text{TS}$ immediately implies the same for $\tt{B}_\text{TS}'$.
+For the $\tt{A}$ argument, we observe that $\tilde{\tt{A}} \cup \tt{A}_\top'$ satisfies conditions Eq \eqref{eq:maxgc1} and Eq \eqref{eq:maxgc2} as applied to $\tt{A}_\text{TS}'$.
+For condition Eq \eqref{eq:maxgc1},
+\begin{align*}
+&\forall \hat{\tt{A}}
+  \supseteq \tt{A}_\exists' - (\tilde{\tt{A}} \cup \tt{A}_\top')
+  ~~=~~ (\tt{A}_\exists' \cup (\tt{A}_\exists - \tt{A}_\top')) - (\tilde{\tt{A}} \cup \tt{A}_\top \cup \tt{A}_\top')
+  ~~=~~ \tt{A}_\exists' \cup \tt{A}_\exists - (\tilde{\tt{A}} \cup \tt{A}_\top \cup \tt{A}_\top'),\\
+&f(\hat{\tt{A}}) \cup \tt{B}_\exists' \cup \tt{B}_\top'
+  ~~=~~ f(\hat{\tt{A}} \cup \tilde{\tt{A}} \cup \tt{A}_\top') \cup \tt{B}_\exists' \cup \tt{B}_\top',
+\end{align*}
+where we have applied Eq \eqref{eq:maxgc2} for $\tt{A}_\text{TS}$ and $\tt{B}_\text{TS}'$.
+Also, for any $\tt{A}_\text{TS}''$ that satisfies Eq \eqref{eq:gcinv1},
+\begin{align*}
+&\forall\hat{\tt{A}}
+  ~~\supseteq~~ \tt{A}_\exists \cup \tt{A}_\exists'' - (\tilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top \cup \tt{A}_\top'')
+  ~~=~~ \tt{A}_\exists \cup \tt{A}_\exists'' - (\tilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top''),\\
+&\tt{f($\hat{\tt{A}}$)} \cup \tt{B}_\exists' \cup \tt{B}_\top'
+  ~~=~~ \tt{f($\hat{\tt{A}} \cup \tilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top \cup \tt{A}_\top''$)} \cup \tt{B}_\exists' \cup \tt{B}_\top'
+  ~~=~~ \tt{f($\hat{\tt{A}} \cup \tilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top''$)} \cup \tt{B}_\exists' \cup \tt{B}_\top',
+\end{align*}
+so $(\emptyset, \tt{A}_\exists \cup \tt{A}_\exists'' - (\tilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top''), \tilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top'')$ satisfies Eq \eqref{eq:gcinv1}.
+Repeating the process for $\tt{A}_\text{TS}'$,
+\begin{align*}
+&\forall \hat{\tt{A}}
+  ~~\supseteq~~ \tt{A}_\exists' \cup (\tt{A}_\exists \cup \tt{A}_\exists'' - (\tilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top'')) - (\tilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top'' \cup \tt{A}_\top'')
+  ~~=~~ \tt{A}_\exists' \cup \tt{A}_\exists'' - (\tilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top''),\\
+&\tt{f($\hat{\tt{A}}$)} \cup \tt{B}_\exists' \cup \tt{B}_\top'
+  ~~=~~ \tt{f($\hat{\tt{A}} \cup \tt{A}_\top' \cup \tilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top''$)} \cup \tt{B}_\exists' \cup \tt{B}_\top'
+  ~~=~~ \tt{f($\hat{\tt{A}} \cup \tilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top''$)} \cup \tt{B}_\exists' \cup \tt{B}_\top',
+\end{align*}
+satisfying Eq \eqref{eq:maxgc2}.
+Therefore, $\tilde{\tt{A}} \cup \tt{A}_\top'$ is a valid set of tombstones for $\tt{GCmax(A$_\text{TS}$', f, B$_\text{TS}$')}$, and so $\tt{GCmax(A$_\text{TS}$', f, B$_\text{TS}$')} \supseteq \tilde{\tt{A}} \cup \tt{A}_\top' \supseteq \tilde{\tt{A}} = \tt{GCmax(A$_\text{TS}$, f, B$_\text{TS}$)}$.
+
+We also point out that $\tt{GCmax}$ is complete in the sense that any $\tilde{\tt{A}}$ that satisfies Eq \eqref{eq:maxgc1} and \eqref{eq:maxgc2} will necessarily be $\tilde{\tt{A}} \subseteq \tt{GCmax(A$_\text{TS}$, f, B$_\text{TS}$)}$ due to the maximality of $\tt{GCmax}$, so any tuple that could be deleted (per Eq \eqref{eq:maxgc1} and \eqref{eq:maxgc2}) will be tombstoned.
+(However, it may not be truly complete. For example, if we have $C <= A \Join B$, $D <= \pi_A(C)$, then we can always delete any tuple of $B$, but our rule does not allow for this.)
+
+The $\tt{GCmax}$ rule may be hard to evaluate in practice, so we provide an easier rule below.
+
+~
+
+\begin{example}[Tuple-based GC]
+$\tt{GC(A$_\text{TS}$, f, B$_\text{TS}$)} = (\emptyset, \tt{A}_\exists - \tilde{\tt{A}}, \tilde{\tt{A}})$ where $\tilde{\tt{A}} = \tt{A}_\top \cup \{t \in \tt{A}_\exists ~:~ \forall \tt{X}, \tt{f(X $\cup$ $\{t\}$)} - \tt{f(X)} \subseteq \tt{B}_\exists \cup \tt{B}_\top\}$.
+\end{example}
+
+
+\subsection{Invariance, Correctness, Monotonicity}
+\begin{thm}[GC Invariance]\label{thm:gcinv}
+The GC Invariant \ref{inv:gci} is maintained by the rewritten program.
+\end{thm}
+\begin{proof}
+Our proof proceeds by showing that the initial conditions satisfy the invariant, and the forward, GC rules and merges preserve the invariant.
+
+The program is initialized with $\tt{A}_\exists = \tt{A}$ and $\tt{A}_\top = \emptyset$, so the invariant is immediately satisfied.
+
+There are two forward rules that we consider: $\tt{B$_\text{TS}$ <= $\exists$(f(A$_\exists$ $\cup$ A$_\top$))}$ as well as rules that merge into $\tt{A}_\text{TS}$.
+In the first case, we increase $\tt{B}_\exists$ while keeping $\tt{B}_\top$ constant, so Eq \eqref{eq:gcinv1} and \eqref{eq:gcinv2} are preserved.
+In the second case, $\tt{A}_\exists$ is increased while $\tt{A}_\top$ is kept constant -- let $\tt{A}_\exists^{t+1}$ be the new value of $\tt{A}_\exists$.
+Since $\tt{A}_\exists^{t+1} \supseteq \tt{A}_\exists$, the GC invariance of $\tt{A}_\text{TS}$ implies the GC invariance of $\tt{A}_\text{TS}^{t+1}$.
+
+GC on $\tt{A}_\text{TS}$ maintains the GC invariance due to the GC Rule Invariance Property \ref{prp:gcrinvariance}.
+GC on $\tt{B}_\text{TS}$ maintains the GC invariance due to the GC Rule Conservation Property \ref{prp:gcrconserve}.
+
+Merges on $\tt{B}_\text{TS}$ increases $\tt{B}_\exists \cup \tt{B}_\top$, so the GC invariance is immediately preserved.
+
+Finally, we consider a merge of $\tt{A}_\text{TS}$ and $\tt{A}_\text{TS}'$.
+Due to Eq \eqref{eq:maxgc2}, the merge of $\tt{A}_\text{TS}$ and $\tt{A}_\text{TS}'$ preserves Eq \eqref{eq:gcinv1}.
+Now if we have a further $\tt{A}_\text{TS}''$ satisfying Eq \eqref{eq:gcinv1}, we note that (1) Eq \eqref{eq:gcinv2} for $\tt{A}_\text{TS}$ implies that the merge of $\tt{A}_\text{TS}$ and $\tt{A}_\text{TS}''$ preserves Eq \eqref{eq:gcinv1}, and thus (2) Eq \eqref{eq:gcinv2} for $\tt{A}_\text{TS}''$ implies that the merge of $\tt{A}_\text{TS}''$ with the merge of $\tt{A}_\text{TS}$ and $\tt{A}_\text{TS}''$ preserves Eq \eqref{eq:gcinv1}.
+Together, this implies that Eq \eqref{eq:gcinv2} is maintained through a merge of $\tt{A}_\text{TS}$ with $\tt{A}_\text{TS}'$.
+$\square$
+\end{proof}
+
+\begin{thm}[Monotonicity]
+The program rewrite does not introduce new points of order.
+\end{thm}
+\begin{proof}
+Monotonicity of GC rules is implied via GC Rule Monotonicity \ref{prp:gcrmonotone}.
+Furthermore, if $\tt{f}$ is monotone, then the composition of $\exists \circ \tt{f}$ is also monotone, so the forward rule is monotone.
+$\square$
+\end{proof}
+
+To show correctness of the logical program rewrite, we will show that the following invariant is maintained.
+\begin{invariant}[Logical Invariant]\label{inv:logical}
+$\tt{A} = \tt{A}_\exists \cup \tt{A}_\top$.
+\end{invariant}
+
+\begin{thm}[Correctness]\label{thm:logicalcorrectness}
+The program maintains the Logical Invariant \ref{inv:logical}.
+In particular, for output sets $\tt{A}$ which have no downstream operations, we have $\tt{A}_\top = \emptyset$ so $\tt{A} = \tt{A}_\exists$.
+\end{thm}
+\begin{proof}
+We will proceed via induction on the execution of the rewritten program.
+Let $\tt{A}_\text{TS}^t$ denote the value of $\tt{A}_\text{TS}$ after executing $t$ rules in the rewritten program.
+Simultaneously, we run the original program, executing the corresponding step whenever the forward rule or a merge is executed, and performing a noop when we run a GC rule.
+(Note that every execution of the original program corresponds to some execution of the rewritten program.)
+Using analogous notation, let $\tt{A}^t$ denote the value of $\tt{A}$ after executing $t$ rules of the rewritten program (so $\tt{A}^{t+1} = \tt{A}^t$ if we run a GC rule).
+
+Observe that the initialization gives $\tt{A}^0 = \tt{A}_\exists^0$.
+
+Consider the execution of the forward rule $\tt{B$_\text{TS}$ <= $\exists$(f(A$_\exists$ $\cup$ A$_\top$)}$, which we can equivalently write as $\tt{B}_\exists^t = \tt{B}_\exists^{t-1} \cup \tt{f(A$_\exists^{t-1}$ $\cup$ A$_\top^{t-1}$)}$, and $\tt{B}_\top^t = \tt{B}_\top^{t-1}$.
+Thus,
+\begin{align*}
+\tt{B}_\exists^t \cup \tt{B}_\top^t
+&= \tt{B}_\exists^{t-1} \cup \tt{f(A$_\exists^{t-1}$ $\cup$ A$_\top^{t-1}$)} \cup \tt{B}_\top^t\\
+&= \tt{B}_\exists^{t-1} \cup \tt{f(A$^{t-1}$)} \cup \tt{B}_\top^{t-1}\\
+&= \tt{B}^{t-1} \cup \tt{f(A$^{t-1}$)}\\
+&= \tt{B}^t.
+\end{align*}
+No other sets are altered by the forward rule.
+
+The GC Rule Conservation Property \ref{prp:gcrconserve} ensures that $\tt{A}_\exists^t \cup \tt{A}_\top^t = \tt{A}_\exists^{t-1} \cup \tt{A}_\top^{t-1} = \tt{A}^{t-1} = \tt{A}^t$.
+
+Finally, consider the merge of $\tt{A}_\text{TS}^{t-1}$ with $\tt{A}_\text{TS}^{\prime(t-1)}$:
+\begin{align*}
+\tt{A}_\exists^t \cup \tt{A}_\top^t
+~~=~~ \tt{A}_\exists^{t-1} \cup \tt{A}_\top^{t-1} \cup \tt{A}_\exists^{\prime(t-1)} \cup \tt{A}_\top^{\prime(t-1)}
+~~=~~ \tt{A}^{t-1} \cup \tt{A}^{\prime(t-1)}
+~~=~~ \tt{A}^t
+\end{align*}
+Thus, we have $\tt{A} = \tt{A}_\exists \cup \tt{A}_\top$.
+Furthermore, since output sets have no downstream operations, they have no associated GC rules, and never gather any tombstones.
+Therefore for an output set $A$, we always maintain $\tt{A} = \tt{A}_\exists \cup \tt{A}_\top = \tt{A}_\exists$.
+$\square$
+\end{proof}
+
+\section{Representation}
+In the previous section, we described a rewrite with logical GC which ensures correctness and monotonicity.
+However, the garbage collection only marks tuples for possible deletion, and thus does not actually reclaim any storage.
+Here, we present a second rewrite that does in fact reclaim storage.
+
+To achieve storage reclamation, our second rewrite will use a representation that is non-monotone.
+However, the representation maintains an invariance with respect to the first program rewrite, so that an execution of the second rewrite corresponds to some execution of the first.
+As a result, monotonicity is preserved at the level of the logical program.
+In practice, this allows us to perform GC in a monotone, coordination-free manner.
+
+\subsection{Representation and rewrite}
+Instead of maintaining two sets $\tt{A}_\exists$ and $\tt{A}_\top$, we only instantiate a set $\tt{A}_I$ which holds all of $\tt{A}_\exists$ but possibly some tuples from $\tt{A}_\top$.
+Intuitively, $\tt{A}_I$ deletes a subset of the tombstoned tuples, which from the previous section, we know to be safe for deletion.
+
+In place of the forward rule Eq \eqref{eq:forwardrule} and GC rule Eq \eqref{eq:gcrule}, we have \textit{instantiated} rules that operate only on the instantiated sets: 
+\begin{align}
+\text{Instantiated forward rule: } && \tt{B}_I &\tt{ <= f(A$_I$)}\label{eq:instantiatedforwardrule}\\
+\text{Instantiated GC rule: } && \tt{A}_I &\tt{ <\# GCI(A$_I$, f, B$_I$)}\label{eq:instantiatedgcrule}
+\end{align}
+Here, we use $\tt{<\#}$ to represent a non-deferred deletion.
+
+We require that the instantiated GC rule to have the following property, which states that $\tt{GCI}$ only deletes tuples that the corresponding $\tt{GC}$ rule has marked as tombstoned.
+\begin{property}[Instantiated GC Safe Deletion]\label{prp:gcisafe}
+$\tt{GCI(A$_I$, f, B$_I$)} \subseteq \tilde{\tt{A}}$ where $(\emptyset, \hat{\tt{A}}, \tilde{\tt{A}}) = \tt{GC(A$_\text{TS}$, f, B$_\text{TS}$)}$.
+\end{property}
+
+\subsection{Correctness}
+The correctness of this program rewrite is demonstrated by maintaining the following invariant.
+\begin{invariant}[Representation Invariant]\label{inv:representation}
+$\tt{A}_\exists \subseteq \tt{A}_I \subseteq \tt{A}_\exists \cup \tt{A}_\top$.
+\end{invariant}
+The Representation Invariant \ref{inv:representation} states that the instantiated set does not contain superfluous tuples, and it does not delete tuples that are unsafe for deletion.
+
+\begin{thm}[Representation Correctness]
+The Representation Invariant \ref{inv:representation} is maintained by the instantiated program.
+In particular, for output sets $\tt{A}$ which have no downstream operations, we have $\tt{A} = \tt{A}_I$.
+\end{thm}
+\begin{proof}
+We initialize the program with $\tt{A}_I^0 = \tt{A}^0 = \tt{A}_\exists^0 = \tt{A}_\exists^0 \cup \tt{A}_\top^0$ --- the final two equalities are due to Thm \ref{thm:logicalcorrectness}.
+
+First, consider the instantiated forward rule $\tt{B}_I \tt{ <= f(A$_I$)}$, which only alters $\tt{B}_I$ and can be expressed as $\tt{B}_I^t = \tt{B}_I^{t-1} \cup \tt{f(A$_I^{t-1}$)}$.
+\begin{align*}
+\tt{B}_\exists^t
+&= \tt{B}_\exists^{t-1} \cup \tt{f(A$_\exists^{t-1}$ $\cup$ A$_\top^{t-1}$)} - \tt{B}_\top^{t-1}\\
+&= \tt{B}_\exists^{t-1} \cup \tt{f(A$_I^{t-1}$)} - \tt{B}_\top^{t-1} && \text{(Thm \ref{thm:gcinv})} \\
+&\subseteq \tt{B}_I^{t-1} \cup \tt{f(A$_I^{t-1}$)}
+&&= \tt{B}_I^t\\
+% &= \tt{B}_I^{t-1} \cup \tt{f(A$_I^{t-1}$)}\\
+&\subseteq \tt{B}_\exists^{t-1} \cup \tt{B}_\top^{t-1} \cup \tt{f(A$_I^{t-1}$)}\\
+&=\tt{B}_\exists^{t-1} \cup \tt{B}_\top^{t-1} \cup \tt{f(A$_\exists^{t-1}$ $\cup$ A$_\top^{t-1}$)} && \text{(Thm \ref{thm:gcinv})}\\
+&=\tt{B}_\exists^{t-1} \cup \tt{B}_\top^{t-1}
+\end{align*}
+
+Next we show that the instantiated GC rule maintains the invariant.
+\begin{align*}
+\tt{A}_\exists^t 
+&= \tt{A}_\exists^{t-1} - \tilde{\tt{A}}\\
+&\subseteq \tt{A}_I^{t-1} - \tt{GCI(A$_I$, f, B$_I$)} & \text{(Property \ref{prp:gcisafe})}\\
+&= \tt{A}_I^t\\
+&\subseteq \tt{A}_\exists^{t-1} \cup \tt{A}_\top^{t-1}\\
+&= \tt{A}_\exists^t \cup \tt{A}_\top^t & \text{(Property \ref{prp:gcrconserve})}
+\end{align*}
+
+Lastly, we consider the merge $\tt{A}_I^t = \tt{A}_I^{t-1} \cup \tt{A}_I^{\prime(t-1)}$ with the corresponding merge $\tt{A}_\text{TS}^t = \tt{A}_\text{TS}^{t-1} \sqcup \tt{A}_\text{TS}^{\prime(t-1)}$.
+\begin{align*}
+\tt{A}_\exists^t
+&= \tt{A}_\exists^{t-1} \cup \tt{A}_\exists^{\prime(t-1)} - (\tt{A}_\top^{t-1} \cup \tt{A}_\top^{\prime(t-1)})\\
+&= \tt{A}_\exists^{t-1} \cup \tt{A}_\exists^{\prime(t-1)}\\
+&\subseteq \tt{A}_I^{t-1} \cup \tt{A}_I^{\prime(t-1)}
+&= \tt{A}_I^t\\
+&\subseteq \tt{A}_\exists^{t-1} \cup \tt{A}_\top^{t-1} \cup \tt{A}_\exists^{\prime(t-1)} \cup \tt{A}_\top^{\prime(t-1)}\\
+&= \tt{A}_\exists^t \cup \tt{A}_\top^t.
+\end{align*}
+
+Hence, we have shown that the Representation Invariant \ref{inv:representation} is maintained by the instantiated program.
+Furthermore, Thm \ref{thm:logicalcorrectness} tells us that for output sets with no downstream operations, we have $\tt{A}_\top = \emptyset$, so $\tt{A}_I = \tt{A}_\exists = \tt{A}$.
+$\square$
+\end{proof}
+
+
+\section{Putting it together}
+
+%\end{document}  % This is where a 'short' article might terminate
+\newpage
+% ensure same length columns on last page (might need two sub-sequent latex runs)
+\balance
+
+%ACKNOWLEDGMENTS are optional
+
+% The following two commands are all you need in the
+% initial runs of your .tex file to
+% produce the bibliography for the citations in your paper.
+\bibliographystyle{abbrv}
+\bibliography{edelweissbib}  % vldb_sample.bib is the name of the Bibliography in this case
+% You must have a proper ".bib" file
+%  and remember to run:
+% latex bibtex latex latex
+% to resolve all references
+
+
+%APPENDIX is optional.
+% ****************** APPENDIX **************************************
+% Example of an appendix; typically would start on a new page
+%pagebreak
+
+
+
+
+\end{document}
