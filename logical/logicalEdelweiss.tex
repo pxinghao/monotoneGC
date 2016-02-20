@@ -77,7 +77,7 @@ Plan of attack:
   \item Require that GC rules maintain a GC invariant, are monotone, and conservative (only promotes $\exists$ to $\top$ and not create new tuples)
   \item Show that rewritten (logical) program is correct, monotone, and preserves GC invariant.
   \end{itemize}
-\item Instantiate representation, add GC-instantiated (GCI) rules.
+\item Instantiate representation, add instantiated GC (GCI) rules.
   \begin{itemize}
   \item Require GCI rules delete only things that are (logically) tombstoned.
   \item Show that representation maintains invariant -- always keeps $\exists$ but possibly also tombstoned tuples.
@@ -163,12 +163,37 @@ While the above properties are reasonable expectations of garbage collection rul
 We now show some examples of such rules.
 
 \begin{example}[Trivial GC]
-$\tt{GC(A$_\text{TS}$, f, B$_\text{TS}$)} = \tt{A}_\text{TS}$.
+$\tt{GCtrivial(A$_\text{TS}$, f, B$_\text{TS}$)} = \tt{A}_\text{TS}$.
 \end{example}
 
 \begin{example}[Copy GC]
-$\tt{GC(A$_\text{TS}$, Id, A$_{1,\text{TS}}$, $\dots$, , A$_{k,\text{TS}}$)} = (\emptyset, \tt{A}_\exists - \tt{A}_\cap, \tt{A}_\top \cup \tt{A}_\cap)$, where $\tt{A}_\cap = \bigcap_{i=1}^k (\tt{A}_{i,\exists} \cup \tt{A}_{i,\top})$.
+$\tt{GCcopy(A$_\text{TS}$, Id, B$_{1,\text{TS}}$, $\dots$, , B$_{k,\text{TS}}$)} = (\emptyset, \tt{A}_\exists - \tt{B}_\cap, \tt{A}_\top \cup \tt{B}_\cap)$, where $\tt{B}_\cap = \tt{A}_\exists \cap \bigcap_{i=1}^k (\tt{B}_{i,\exists} \cup \tt{B}_{i,\top})$.
 \end{example}
+
+For the copy rule, the GC Invariant \ref{inv:gci} reduces to 
+\begin{align}
+\forall i, \tt{A}_\top &\subseteq \tt{B}_{i,\exists} \cup \tt{B}_{i,\top},\label{eq:gcicopy1}\\
+\forall i, \tt{A}_\top \cup \tt{A}_\top' &\subseteq \tt{B}_{i,\exists} \cup \tt{B}_{i,\top}.\label{eq:gcicopy2}
+\end{align}
+Suppose $\tt{A}_\text{TS}$ satisfies the GC invariant Eq \eqref{eq:gcicopy1}.
+Then, $\forall i, \tt{A}_\top \cup \tt{B}_\cap \subseteq \tt{B}_{i,\exists} \cup \tt{B}_{i,\top}$, so $\tt{GCcopy}$ preserves Eq \eqref{eq:gcicopy1}.
+Suppose $\tt{A}_\text{TS}'$ satisfies the GC invariant Eq \eqref{eq:gcicopy1}.
+Then $\forall i, \tt{A}_\top \cup \tt{B}_\cap \cup \tt{A}_\top' \subseteq \tt{B}_{i,\exists} \cup \tt{B}_{i,\top}$, so $\tt{GCcopy}$ preserves Eq \eqref{eq:gcicopy2}.
+
+The GC Rule Conservation Property \ref{prp:gcrconserve} is straightforward.
+
+Suppose $\tt{A}_\text{TS}' \geq \tt{A}_\text{TS}$, i.e., $\tt{A}_\top' \supseteq \tt{A}_\top$ and $\tt{A}_\top' \cup \tt{A}_\exists' \supseteq \tt{A}_\top \cup \tt{A}_\exists$.
+Suppose also $\tt{A}_\text{TS}'$ satisfies the GC Invariant \ref{inv:gci} with respect to $\tt{B}_{i,\text{TS}}' \geq \tt{B}_{i,\text{TS}}$.
+Then
+\begin{align*}
+\tt{A}_\top \cup \left(\tt{A}_\exists \cap \bigcap_{i=1}^k (\tt{B}_{i,\exists} \cup \tt{B}_{i,\top})\right)
+&\subseteq \tt{A}_\top' \cup \left((\tt{A}_\exists' \cup \tt{A}_\top') \cap \bigcap_{i=1}^k (\tt{B}_{i,\exists}' \cup \tt{B}_{i,\top}')\right)\\
+&= \tt{A}_\top' \cup \left(\tt{A}_\exists' \cap \bigcap_{i=1}^k (\tt{B}_{i,\exists}' \cup \tt{B}_{i,\top}')\right) \cup \left(\tt{A}_\top' \cap \bigcap_{i=1}^k (\tt{B}_{i,\exists}' \cup \tt{B}_{i,\top}')\right)\\
+&= \tt{A}_\top' \cup \left(\tt{A}_\exists' \cap \bigcap_{i=1}^k (\tt{B}_{i,\exists}' \cup \tt{B}_{i,\top}')\right),
+\end{align*}
+where the final equality follows because $\forall i=1,\dots, k, ~\tt{A}_\top' \subseteq \tt{B}_{i,\exists}' \cup \tt{B}_{i,\top}'$.
+Furthermore, it follows from the GC Rule Conservation Property \ref{prp:gcrconserve}, we also have that $(\tt{A}_\exists - \tt{B}_\cap) \cup (\tt{A}_\top \cup \tt{B}_\cap) \subseteq (\tt{A}_\exists' - \tt{B}_\cap') \cup (\tt{A}_\top' \cup \tt{B}_\cap')$.
+Hence, $\tt{GCcopy}$ is monotone.
 
 \begin{example}[Max GC]
 $\tt{GCmax(A$_\text{TS}$, f, B$_\text{TS}$)} = (\emptyset, \tt{A}_\exists - \tilde{\tt{A}}, \tilde{\tt{A}})$ where $\tt{A}_\top \subseteq \tilde{\tt{A}} \subseteq \tt{A}_\exists \cup \tt{A}_\top$ is the (unique) largest set such that
