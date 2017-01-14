@@ -97,6 +97,18 @@ This invariance ensures that the instantiated representation corresponds to the 
 However, we do not require the representation to be monotone; in particular, a deleted tombstone tuple could potentially be re-instantiated without affecting the correctness of the program.
 Nevertheless, since we are maintaining equivalence to the logical, monotone program, we may execute operations in a coordination-free manner.
 
+\subsection{Some thoughts}
+I think there are some connections to both CALM and $\mathcal{I}$-confluence.
+\begin{enumerate}
+\item The logical GC rules are monotone, so CALM tells us that the logical program is eventually consistent without any points of order.
+\item The instantiated program is not monotone, so the representation is not eventually consistent without imposing points of order.
+\item Throughout the paper, we introduce various invariants and demonstrate that they hold in the rewritten logical and instantiated programs (as long as the GC rules introduce fulfill some properties).
+In other words, we show $\mathcal{I}$-confluence of our rewritten rules and GC rules.
+The IC theorem tells us that we can have coordination-free execution and still ``converge''\footnote{
+  We need to be careful about what coordination-freedom, convergence, and transactional availability means in the context of a Bloom program.
+}
+\end{enumerate}
+
 \section{Preliminaries}
 \subsection{Tombstones}
 \subsection{Copy rules --- reduction for multi-output sets}
@@ -132,6 +144,14 @@ Instead of having a single set \tt{A}, we use a tuple $\tt{A}_\text{TS} = (\tt{A
 Intuitively, tuples in $\tt{A}_\top$ are those that would have been in the original set $\tt{A}$, but are now also marked for reclamation.
 Conversely, tuples in $\tt{A}_\exists$ are also in $\tt{A}$ but not marked for reclamation.
 
+In cases where $\tt{A}$ has a unique key, we can additional keep a copy $\tt{A}_!$ of the keys in the tuple $\tt{A}_{TS!} = (\tt{A}_\neg, \tt{A}_\exists, \tt{A}_\top, \tt{A}_!)$ with the invariant $\tt{A}_! = \pi_k(\tt{A}_\exists \cup \tt{A}_\top)$.
+The merge rule for such tuples is
+\begin{align*}
+\tt{A}_\text{TS!} \sqcup \tt{A}_\text{TS!}'
+&= (\tt{A}_\neg, \tt{A}_\exists, \tt{A}_\top, \tt{A}_!) \sqcup (\tt{A}'_\neg, \tt{A}'_\exists, \tt{A}'_\top, \tt{A}'_!)\\
+&= (\tt{A}_\neg \cup \tt{A}'_\neg - (\tt{A}_\exists \cup \tt{A}'_\exists \cup \tt{A}_\top \cup \tt{A}_\top), \tt{A}_\exists \cup \tt{A}'_\exists - (\tt{A}_\top \cup \tt{A}_\top), \tt{A}_\top \cup \tt{A}_\top, \tt{A}_! \cup \tt{A}'_!)
+\end{align*}
+
 
 \subsection{Logical garbage collection}
 Armed with this lifted representation, we can now provide a rewrite of the original program, together with an additional GC rule for each rule.
@@ -147,13 +167,13 @@ For this rewrite to preserve correctness and monotonicity, we will require that 
 \begin{invariant}[GC Invariance]\label{inv:gci}
 For any set $\tt{A}$ that participates in rules $\tt{B$_i$ <= f$_i$(A)}$ for $i = 1, \dots, k$, we require
 \begin{align}
-\forall i,~~ \forall\hat{\tt{A}} \supseteq \tt{A}_\exists,
-\quad \tt{f$_i$($\hat{\tt{A}}$)} \cup \tt{B}_{i,\exists} \cup \tt{B}_{i,\top} = \tt{f$_i$($\hat{\tt{A}} \cup \tt{A}_\top$)} \cup \tt{B}_{i,\exists} \cup \tt{B}_{i,\top} \label{eq:gcinv1}
+\forall i,~~ \forall\widehat{\tt{A}} \supseteq \tt{A}_\exists,
+\quad \tt{f$_i$($\widehat{\tt{A}}$)} \cup \tt{B}_{i,\exists} \cup \tt{B}_{i,\top} = \tt{f$_i$($\widehat{\tt{A}} \cup \tt{A}_\top$)} \cup \tt{B}_{i,\exists} \cup \tt{B}_{i,\top} \label{eq:gcinv1}
 \end{align}
 Furthermore, for $\tt{A}_\text{TS}$ and $\tt{A}_\text{TS}'$ satisfying Eq \eqref{eq:gcinv1}, it must be that
 \begin{align}
-\forall i,~~ \forall\hat{\tt{A}} \supseteq \tt{A}_\exists \cup \tt{A}_\exists' - (\tt{A}_\top \cup \tt{A}_\top'),
-\quad \tt{f$_i$($\hat{\tt{A}}$)} \cup \tt{B}_{i,\exists} \cup \tt{B}_{i,\top} = \tt{f$_i$($\hat{\tt{A}} \cup \tt{A}_\top \cup \tt{A}_\top'$)} \cup \tt{B}_{i,\exists} \cup \tt{B}_{i,\top} \label{eq:gcinv2}
+\forall i,~~ \forall\widehat{\tt{A}} \supseteq \tt{A}_\exists \cup \tt{A}_\exists' - (\tt{A}_\top \cup \tt{A}_\top'),
+\quad \tt{f$_i$($\widehat{\tt{A}}$)} \cup \tt{B}_{i,\exists} \cup \tt{B}_{i,\top} = \tt{f$_i$($\widehat{\tt{A}} \cup \tt{A}_\top \cup \tt{A}_\top'$)} \cup \tt{B}_{i,\exists} \cup \tt{B}_{i,\top} \label{eq:gcinv2}
 \end{align}
 \end{invariant}
 Eq \eqref{eq:gcinv1} ensures that any tombstoned tuple can be safely deleted, since any tuple it may generate (for any possible future input) is already present in the output set, and thus the tombstoned tuple has no downstream effect.
@@ -173,6 +193,20 @@ Then it must be the case that $\tt{G}_\exists \subseteq \tt{A}_\exists$, and $\t
 \end{property}
 
 Property \ref{prp:gcrmonotone} ensures that the GC rules are monotone, and Property \ref{prp:gcrconserve} only moves tuples from $\tt{A}_\exists$ to $\tt{A}_\top$.
+
+% \begin{lemma}
+% The GC Rule Conservation Property \ref{prp:gcrconserve} implies GC Rule Monotonicity Property \ref{prp:gcrmonotone}.
+% \end{lemma}
+
+% \begin{lemma}
+% Suppose the $\tt{GC}$ rule is monotone, conservative, and maintains GC Invariant \ref{inv:gci} Eq \eqref{eq:gcinv1}. Then \tt{GC} satisfies GC Invariant \ref{inv:gci} Eq \eqref{eq:gcinv2}.
+% \end{lemma}
+% \begin{proof}
+% Let $\tt{X} = \tt{A}_\text{TS} \sqcup \tt{A}_\text{TS}'$ where $\tt{A}_\text{TS}$ and $\tt{A}_\text{TS}$ both satisfy GC Invariant \ref{inv:gci} Eq \eqref{eq:gcinv1}.
+% Let $\tt{G} = \tt{GC}(\tt{X}, \tt{f}, \tt{B}_\text{TS})$.
+% By conservation, $\tt{G} \geq \tt{X}$, and by monotonicity, $\tt{X} \geq \tt{A}_\text{TS}$, $\tt{X} \geq \tt{A}_\text{TS}'$.
+% This implies $\tt{G}_\top \geq \tt{A}_\text{TS} \cup \tt{A}_\text{TS}'$, and therefore by conservation $\tt{G}_\exists = \tt{A}_\exists \cup \tt{A}_\exists' - (\tt{A}_\top \cup \tt{A}_\top')$.
+% \end{proof}
 
 \subsubsection{Examples}
 While the above properties are reasonable expectations of garbage collection rules, it is not obvious that there are useful rules that satisfy them.
@@ -212,13 +246,13 @@ Furthermore, it follows from the GC Rule Conservation Property \ref{prp:gcrconse
 Hence, $\tt{GCcopy}$ is monotone.
 
 \begin{example}[Max GC]
-$\tt{GCmax(A$_\text{TS}$, f, B$_\text{TS}$)} = (\emptyset, \tt{A}_\exists - \tilde{\tt{A}}, \tilde{\tt{A}})$ where $\tt{A}_\top \subseteq \tilde{\tt{A}} \subseteq \tt{A}_\exists \cup \tt{A}_\top$ is the (unique) largest set such that
+$\tt{GCmax(A$_\text{TS}$, f, B$_\text{TS}$)} = (\emptyset, \tt{A}_\exists - \widetilde{\tt{A}}, \widetilde{\tt{A}})$ where $\tt{A}_\top \subseteq \widetilde{\tt{A}} \subseteq \tt{A}_\exists \cup \tt{A}_\top$ is the (unique) largest set such that
 \begin{align}
-\forall\hat{\tt{A}} \supseteq \tt{A}_\exists - \tilde{\tt{A}}, \quad \tt{f($\hat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top = \tt{f($\hat{\tt{A}} \cup \tilde{\tt{A}} \cup \tt{A}_\top$)} \cup \tt{B}_\exists \cup \tt{B}_\top,\label{eq:maxgc1}
+\forall\widehat{\tt{A}} \supseteq \tt{A}_\exists - \widetilde{\tt{A}}, \quad \tt{f($\widehat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top = \tt{f($\widehat{\tt{A}} \cup \widetilde{\tt{A}} \cup \tt{A}_\top$)} \cup \tt{B}_\exists \cup \tt{B}_\top,\label{eq:maxgc1}
 \end{align}
 and for any $\tt{A}_\text{TS}'$ satisfying the GC Invariant \ref{inv:gci} Eq \eqref{eq:gcinv1},
 \begin{align}
-\forall\hat{\tt{A}} \supseteq \tt{A}_\exists \cup \tt{A}_\exists' - ({\tilde{\tt{A}} \cup \tt{A}_\top} \cup \tt{A}_\top'), \quad \tt{f($\hat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top = \tt{f($\hat{\tt{A}} \cup \tilde{\tt{A}} \cup \tt{A}_\top \cup \tt{A}_\top'$)} \cup \tt{B}_\exists \cup \tt{B}_\top.\label{eq:maxgc2}
+\forall\widehat{\tt{A}} \supseteq \tt{A}_\exists \cup \tt{A}_\exists' - ({\widetilde{\tt{A}} \cup \tt{A}_\top} \cup \tt{A}_\top'), \quad \tt{f($\widehat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top = \tt{f($\widehat{\tt{A}} \cup \widetilde{\tt{A}} \cup \tt{A}_\top \cup \tt{A}_\top'$)} \cup \tt{B}_\exists \cup \tt{B}_\top.\label{eq:maxgc2}
 \end{align}
 \end{example}
 
@@ -231,76 +265,76 @@ Then $\tt{Z} = \tt{X} \cup \tt{Y}$ also fulfills our two conditions.
 First, note that since $\tt{X}$ and $\tt{Y}$ both satisfy Eq \eqref{eq:maxgc1} and Eq \eqref{eq:maxgc2}, the TS sets $(\tt{A}_\neg, \tt{A}_\exists - \tt{X}, \tt{X} \cup \tt{A}_\top)$ and $(\tt{A}_\neg, \tt{A}_\exists - \tt{Y}, \tt{Y} \cup \tt{A}_\top)$ satisfy Invariant \ref{inv:gci}.
 Applying Eq \eqref{eq:maxgc2}, we have
 \begin{align*}
-&\forall\hat{\tt{A}}
+&\forall\widehat{\tt{A}}
   ~~\supseteq~~ \tt{A}_\exists \cup (\tt{A}_\exists - \tt{Y}) - (\tt{X} \cup \tt{A}_\top \cup \tt{Y} \cup \tt{A}_\top')
   ~~=~~ \tt{A}_\exists - (\tt{X} \cup \tt{Y})
   ~~=~~ \tt{A}_\exists - \tt{Z},\\
-&\tt{f($\hat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top
-  ~~=~~ \tt{f($\hat{\tt{A}} \cup \tt{X} \cup \tt{A}_\top$)} \cup \tt{B}_\exists \cup \tt{B}_\top
-  ~~=~~ \tt{f($\hat{\tt{A}} \cup \tt{X} \cup \tt{Y} \cup \tt{A}_\top \cup \tt{A}_\top'$)} \cup \tt{B}_\exists \cup \tt{B}_\top,
+&\tt{f($\widehat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top
+  ~~=~~ \tt{f($\widehat{\tt{A}} \cup \tt{X} \cup \tt{A}_\top$)} \cup \tt{B}_\exists \cup \tt{B}_\top
+  ~~=~~ \tt{f($\widehat{\tt{A}} \cup \tt{X} \cup \tt{Y} \cup \tt{A}_\top \cup \tt{A}_\top'$)} \cup \tt{B}_\exists \cup \tt{B}_\top,
 \end{align*}
-where we have used the fact that $\hat{\tt{A}} \cup \tt{X} \cup \tt{A}_\top \cup \tt{A}_\top' \supseteq \tt{A}_\exists - \tt{Y}$ and Eq \eqref{eq:maxgc1} for $\tt{Y}$.
+where we have used the fact that $\widehat{\tt{A}} \cup \tt{X} \cup \tt{A}_\top \cup \tt{A}_\top' \supseteq \tt{A}_\exists - \tt{Y}$ and Eq \eqref{eq:maxgc1} for $\tt{Y}$.
 Hence, $\tt{Z}$ satisfies Eq \eqref{eq:maxgc1}.
 
 Furthermore, for any $\tt{A}_\text{TS}'$ satisfying the GC Invariant \ref{inv:gci} Eq \eqref{eq:gcinv1}, applying Eq \eqref{eq:maxgc2} to \tt{X}, we get
 \begin{align*}
-&\forall\hat{\tt{A}}
+&\forall\widehat{\tt{A}}
   ~~\supseteq~~ \tt{A}_\exists \cup \tt{A}_\exists' - (\tt{X} \cup \tt{A}_\top \cup \tt{A}_\top'),
-&\tt{f($\hat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top
-  ~~=~~ \tt{f($\hat{\tt{A}} \cup \tt{X} \cup \tt{A}_\top \cup \tt{A}_\top'$)} \cup \tt{B}_\exists \cup \tt{B}_\top,
+&\tt{f($\widehat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top
+  ~~=~~ \tt{f($\widehat{\tt{A}} \cup \tt{X} \cup \tt{A}_\top \cup \tt{A}_\top'$)} \cup \tt{B}_\exists \cup \tt{B}_\top,
 \end{align*}
 so $\tt{A}_\text{TS}'' = (\emptyset, (\tt{A}_\exists \cup \tt{A}_\exists') - (\tt{X} \cup \tt{A}_\top \cup \tt{A}_\top'), \tt{X} \cup \tt{A}_\top \cup \tt{A}_\top')$ satisfies Eq \eqref{eq:gcinv1}.
 We can then apply Eq \eqref{eq:maxgc2} to $\tt{Y}$:
 \begin{align*}
-&\forall\hat{\tt{A}}
+&\forall\widehat{\tt{A}}
   ~~\supseteq~~ \tt{A}_\exists \cup \tt{A}_\exists'' - (\tt{Y} \cup \tt{A}_\top \cup \tt{A}_\top'')
   ~~=~~ \tt{A}_\exists \cup \tt{A}_\exists' - (\tt{X} \cup \tt{Y} \cup \tt{A}_\top \cup \tt{A}_\top'),\\
-&\tt{f($\hat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top
-  ~~=~~ \tt{f($\hat{\tt{A}} \cup \tt{Y} \cup \tt{A}_\top \cup \tt{A}_\top''$)} \cup \tt{B}_\exists \cup \tt{B}_\top
-  ~~=~~ \tt{f($\hat{\tt{A}} \cup \tt{X} \cup \tt{Y} \cup \tt{A}_\top \cup \tt{A}_\top'$)} \cup \tt{B}_\exists \cup \tt{B}_\top.
+&\tt{f($\widehat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top
+  ~~=~~ \tt{f($\widehat{\tt{A}} \cup \tt{Y} \cup \tt{A}_\top \cup \tt{A}_\top''$)} \cup \tt{B}_\exists \cup \tt{B}_\top
+  ~~=~~ \tt{f($\widehat{\tt{A}} \cup \tt{X} \cup \tt{Y} \cup \tt{A}_\top \cup \tt{A}_\top'$)} \cup \tt{B}_\exists \cup \tt{B}_\top.
 \end{align*}
 Hence $\tt{Z}$ also satisfies Eq \eqref{eq:maxgc2}.
 Thus, there is a unique largest set that achieves Eq \eqref{eq:maxgc1} and \eqref{eq:maxgc2}.
 
 It is easy to see $\tt{GCmax}$ maintains the GC Invariant \ref{inv:gci}, since Eq \eqref{eq:maxgc1} satisfies Eq \eqref{eq:gcinv1} and Eq \eqref{eq:maxgc2} satisfies Eq \eqref{eq:gcinv2}.
-Similarly, the GC Rule Conservation Property \ref{prp:gcrconserve} is also maintained by the choice of $\tt{A}_\top \subseteq \tilde{\tt{A}} \subseteq \tt{A}_\exists \cup \tt{A}_\top$.
+Similarly, the GC Rule Conservation Property \ref{prp:gcrconserve} is also maintained by the choice of $\tt{A}_\top \subseteq \widetilde{\tt{A}} \subseteq \tt{A}_\exists \cup \tt{A}_\top$.
 
 To show monotonicity, suppose we have $\tt{A}_\text{TS} \leq \tt{A}_\text{TS}'$ and $\tt{B}_\text{TS} \leq \tt{B}_\text{TS}'$.
 Monotonicity in the $\tt{B}$ argument is easy: Eq \eqref{eq:maxgc1} and \eqref{eq:maxgc2} for $\tt{B}_\text{TS}$ immediately implies the same for $\tt{B}_\text{TS}'$.
-For the $\tt{A}$ argument, we observe that $\tilde{\tt{A}} \cup \tt{A}_\top'$ satisfies conditions Eq \eqref{eq:maxgc1} and Eq \eqref{eq:maxgc2} as applied to $\tt{A}_\text{TS}'$.
+For the $\tt{A}$ argument, we observe that $\widetilde{\tt{A}} \cup \tt{A}_\top'$ satisfies conditions Eq \eqref{eq:maxgc1} and Eq \eqref{eq:maxgc2} as applied to $\tt{A}_\text{TS}'$.
 For condition Eq \eqref{eq:maxgc1},
 \begin{align*}
-&\forall \hat{\tt{A}}
-  \supseteq \tt{A}_\exists' - (\tilde{\tt{A}} \cup \tt{A}_\top')
-  ~~=~~ (\tt{A}_\exists' \cup (\tt{A}_\exists - \tt{A}_\top')) - (\tilde{\tt{A}} \cup \tt{A}_\top \cup \tt{A}_\top')
-  ~~=~~ \tt{A}_\exists' \cup \tt{A}_\exists - (\tilde{\tt{A}} \cup \tt{A}_\top \cup \tt{A}_\top'),\\
-&f(\hat{\tt{A}}) \cup \tt{B}_\exists' \cup \tt{B}_\top'
-  ~~=~~ f(\hat{\tt{A}} \cup \tilde{\tt{A}} \cup \tt{A}_\top') \cup \tt{B}_\exists' \cup \tt{B}_\top',
+&\forall \widehat{\tt{A}}
+  \supseteq \tt{A}_\exists' - (\widetilde{\tt{A}} \cup \tt{A}_\top')
+  ~~=~~ (\tt{A}_\exists' \cup (\tt{A}_\exists - \tt{A}_\top')) - (\widetilde{\tt{A}} \cup \tt{A}_\top \cup \tt{A}_\top')
+  ~~=~~ \tt{A}_\exists' \cup \tt{A}_\exists - (\widetilde{\tt{A}} \cup \tt{A}_\top \cup \tt{A}_\top'),\\
+&f(\widehat{\tt{A}}) \cup \tt{B}_\exists' \cup \tt{B}_\top'
+  ~~=~~ f(\widehat{\tt{A}} \cup \widetilde{\tt{A}} \cup \tt{A}_\top') \cup \tt{B}_\exists' \cup \tt{B}_\top',
 \end{align*}
 where we have applied Eq \eqref{eq:maxgc2} for $\tt{A}_\text{TS}$ and $\tt{B}_\text{TS}'$.
 Also, for any $\tt{A}_\text{TS}''$ that satisfies Eq \eqref{eq:gcinv1},
 \begin{align*}
-&\forall\hat{\tt{A}}
-  ~~\supseteq~~ \tt{A}_\exists \cup \tt{A}_\exists'' - (\tilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top \cup \tt{A}_\top'')
-  ~~=~~ \tt{A}_\exists \cup \tt{A}_\exists'' - (\tilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top''),\\
-&\tt{f($\hat{\tt{A}}$)} \cup \tt{B}_\exists' \cup \tt{B}_\top'
-  ~~=~~ \tt{f($\hat{\tt{A}} \cup \tilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top \cup \tt{A}_\top''$)} \cup \tt{B}_\exists' \cup \tt{B}_\top'
-  ~~=~~ \tt{f($\hat{\tt{A}} \cup \tilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top''$)} \cup \tt{B}_\exists' \cup \tt{B}_\top',
+&\forall\widehat{\tt{A}}
+  ~~\supseteq~~ \tt{A}_\exists \cup \tt{A}_\exists'' - (\widetilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top \cup \tt{A}_\top'')
+  ~~=~~ \tt{A}_\exists \cup \tt{A}_\exists'' - (\widetilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top''),\\
+&\tt{f($\widehat{\tt{A}}$)} \cup \tt{B}_\exists' \cup \tt{B}_\top'
+  ~~=~~ \tt{f($\widehat{\tt{A}} \cup \widetilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top \cup \tt{A}_\top''$)} \cup \tt{B}_\exists' \cup \tt{B}_\top'
+  ~~=~~ \tt{f($\widehat{\tt{A}} \cup \widetilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top''$)} \cup \tt{B}_\exists' \cup \tt{B}_\top',
 \end{align*}
-so $(\emptyset, \tt{A}_\exists \cup \tt{A}_\exists'' - (\tilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top''), \tilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top'')$ satisfies Eq \eqref{eq:gcinv1}.
+so $(\emptyset, \tt{A}_\exists \cup \tt{A}_\exists'' - (\widetilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top''), \widetilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top'')$ satisfies Eq \eqref{eq:gcinv1}.
 Repeating the process for $\tt{A}_\text{TS}'$,
 \begin{align*}
-&\forall \hat{\tt{A}}
-  ~~\supseteq~~ \tt{A}_\exists' \cup (\tt{A}_\exists \cup \tt{A}_\exists'' - (\tilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top'')) - (\tilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top'' \cup \tt{A}_\top'')
-  ~~=~~ \tt{A}_\exists' \cup \tt{A}_\exists'' - (\tilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top''),\\
-&\tt{f($\hat{\tt{A}}$)} \cup \tt{B}_\exists' \cup \tt{B}_\top'
-  ~~=~~ \tt{f($\hat{\tt{A}} \cup \tt{A}_\top' \cup \tilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top''$)} \cup \tt{B}_\exists' \cup \tt{B}_\top'
-  ~~=~~ \tt{f($\hat{\tt{A}} \cup \tilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top''$)} \cup \tt{B}_\exists' \cup \tt{B}_\top',
+&\forall \widehat{\tt{A}}
+  ~~\supseteq~~ \tt{A}_\exists' \cup (\tt{A}_\exists \cup \tt{A}_\exists'' - (\widetilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top'')) - (\widetilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top'' \cup \tt{A}_\top'')
+  ~~=~~ \tt{A}_\exists' \cup \tt{A}_\exists'' - (\widetilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top''),\\
+&\tt{f($\widehat{\tt{A}}$)} \cup \tt{B}_\exists' \cup \tt{B}_\top'
+  ~~=~~ \tt{f($\widehat{\tt{A}} \cup \tt{A}_\top' \cup \widetilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top''$)} \cup \tt{B}_\exists' \cup \tt{B}_\top'
+  ~~=~~ \tt{f($\widehat{\tt{A}} \cup \widetilde{\tt{A}} \cup \tt{A}_\top' \cup \tt{A}_\top''$)} \cup \tt{B}_\exists' \cup \tt{B}_\top',
 \end{align*}
 satisfying Eq \eqref{eq:maxgc2}.
-Therefore, $\tilde{\tt{A}} \cup \tt{A}_\top'$ is a valid set of tombstones for $\tt{GCmax(A$_\text{TS}$', f, B$_\text{TS}$')}$, and so $\tt{GCmax(A$_\text{TS}$', f, B$_\text{TS}$')} \supseteq \tilde{\tt{A}} \cup \tt{A}_\top' \supseteq \tilde{\tt{A}} = \tt{GCmax(A$_\text{TS}$, f, B$_\text{TS}$)}$.
+Therefore, $\widetilde{\tt{A}} \cup \tt{A}_\top'$ is a valid set of tombstones for $\tt{GCmax(A$_\text{TS}$', f, B$_\text{TS}$')}$, and so $\tt{GCmax(A$_\text{TS}$', f, B$_\text{TS}$')} \supseteq \widetilde{\tt{A}} \cup \tt{A}_\top' \supseteq \widetilde{\tt{A}} = \tt{GCmax(A$_\text{TS}$, f, B$_\text{TS}$)}$.
 
-We also point out that $\tt{GCmax}$ is complete in the sense that any $\tilde{\tt{A}}$ that satisfies Eq \eqref{eq:maxgc1} and \eqref{eq:maxgc2} will necessarily be $\tilde{\tt{A}} \subseteq \tt{GCmax(A$_\text{TS}$, f, B$_\text{TS}$)}$ due to the maximality of $\tt{GCmax}$, so any tuple that could be deleted (per Eq \eqref{eq:maxgc1} and \eqref{eq:maxgc2}) will be tombstoned.
+We also point out that $\tt{GCmax}$ is complete in the sense that any $\widetilde{\tt{A}}$ that satisfies Eq \eqref{eq:maxgc1} and \eqref{eq:maxgc2} will necessarily be $\widetilde{\tt{A}} \subseteq \tt{GCmax(A$_\text{TS}$, f, B$_\text{TS}$)}$ due to the maximality of $\tt{GCmax}$, so any tuple that could be deleted (per Eq \eqref{eq:maxgc1} and \eqref{eq:maxgc2}) will be tombstoned.
 (However, it may not be truly complete. For example, if we have $C <= A \Join B$, $D <= \pi_A(C)$, then we can always delete any tuple of $B$, but our rule does not allow for this.)
 
 The $\tt{GCmax}$ rule may be hard to evaluate in practice, so we provide an easier rule below.
@@ -308,7 +342,7 @@ The $\tt{GCmax}$ rule may be hard to evaluate in practice, so we provide an easi
 ~
 
 \begin{example}[Tuple-based GC]
-$\tt{GC(A$_\text{TS}$, f, B$_\text{TS}$)} = (\emptyset, \tt{A}_\exists - \tilde{\tt{A}}, \tilde{\tt{A}})$ where $\tilde{\tt{A}} = \tt{A}_\top \cup \{t \in \tt{A}_\exists ~:~ \forall \tt{X}, \tt{f(X $\cup$ $\{t\}$)} - \tt{f(X)} \subseteq \tt{B}_\exists \cup \tt{B}_\top\}$.
+$\tt{GC(A$_\text{TS}$, f, B$_\text{TS}$)} = (\emptyset, \tt{A}_\exists - \widetilde{\tt{A}}, \widetilde{\tt{A}})$ where $\widetilde{\tt{A}} = \tt{A}_\top \cup \{t \in \tt{A}_\exists ~:~ \forall \tt{X}, \tt{f(X $\cup$ $\{t\}$)} - \tt{f(X)} \subseteq \tt{B}_\exists \cup \tt{B}_\top\}$.
 \end{example}
 
 
@@ -412,19 +446,33 @@ In place of the forward rule Eq \eqref{eq:forwardrule} and GC rule Eq \eqref{eq:
 \end{align}
 Here, we use $\tt{<\#}$ to represent a non-deferred deletion.
 
+In some cases, where $\tt{A}$ has a primary key, we may choose to augment the representation by keeping the primary keys of $\tt{A}_\exists \cup \tt{A}_\top$.
+We represent this as $\tt{A.k}$ in range compressed form, and write $\tt{A}_+ = (\tt{A.k}, \tt{A}_I)$ as the augmented representation.
+The merge of augmented representations is defined as $(\tt{A.k}, \tt{A}_I) \sqcup (\tt{A}'\tt{.k}, \tt{A}_I') = (\tt{A.k} \cup \tt{A}'\tt{.k}, (\tt{A}_I \cup \tt{A}'_I)\tt{.notin}(\tt{A.k.notin(A$_I$)}) \cup \tt{A}'\tt{.k}\tt{.notin}(\tt{A}'_I))$.
+
+The rules Eq \eqref{eq:instantiatedforwardrule} and \eqref{eq:instantiatedgcrule} for augmented representation are:
+\begin{align}
+\text{Instantiated (augmented) forward rule: } && \tt{B}_+ &\tt{ <= } (\pi_k(\tt{f}(\tt{A}_I)), \tt{f}(\tt{A}_I))\label{eq:augmentedforwardrule}\\
+\text{Instantiated (augmented) GC rule: } && \tt{A}_+ &\tt{ <= } (\tt{A.k}, \tt{GCI(A$_+$, f, B$_+$)})\label{eq:augmentedgcrule}
+\end{align}
+
+
 We require that the instantiated GC rule to have the following property, which states that $\tt{GCI}$ only deletes tuples that the corresponding $\tt{GC}$ rule has marked as tombstoned.
 \begin{property}[Instantiated GC Safe Deletion]\label{prp:gcisafe}
-$\tt{GCI(A$_I$, f, B$_I$)} \subseteq \tilde{\tt{A}}$ where $(\emptyset, \hat{\tt{A}}, \tilde{\tt{A}}) = \tt{GC(A$_\text{TS}$, f, B$_\text{TS}$)}$.
+If $\tt{A}_\exists \subseteq \tt{A}_I \subseteq \tt{A}_\exists \cup \tt{A}_\top$ and $\tt{B}_\exists \subseteq \tt{B}_I \subseteq \tt{B}_\exists \cup \tt{B}_\top$, then $\tt{GCI(A$_I$, f, B$_I$)} \subseteq \widetilde{\tt{A}}$ where $(\emptyset, \widehat{\tt{A}}, \widetilde{\tt{A}}) = \tt{GC(A$_\text{TS}$, f, B$_\text{TS}$)}$.
+Furthermore, if $\tt{A.k} = \pi_k(\tt{A}_\exists \cup \tt{A}_\top)$, then $\tt{GCI(A$_+$, f, B$_+$).k} = \tt{GC(A$_\text{TS}$, f, B$_\text{TS}$).k}$.
 \end{property}
 
 \subsection{Correctness}
 The correctness of this program rewrite is demonstrated by maintaining the following invariant.
 \begin{invariant}[Representation Invariant]\label{inv:representation}
 $\tt{A}_\exists \subseteq \tt{A}_I \subseteq \tt{A}_\exists \cup \tt{A}_\top$.
+For augmented representations, $\tt{A.k} = \pi_k(\tt{A}_\exists \cup \tt{A}_\top)$.
 \end{invariant}
 The Representation Invariant \ref{inv:representation} states that the instantiated set does not contain superfluous tuples, and it does not delete tuples that are unsafe for deletion.
+Furthermore, for the augmented representation, we can retrieve the primary keys of tombstoned tuples by $\pi_k(\tt{A}_\top) = \tt{A.k}\tt{.notin}(\tt{A}_I, \tt{:k => :k})$.
 
-\begin{thm}[Representation Correctness]
+\begin{thm}[Representation Correctness]\label{thm:representationcorrectness}
 The Representation Invariant \ref{inv:representation} is maintained by the instantiated program.
 In particular, for output sets $\tt{A}$ which have no downstream operations, we have $\tt{A} = \tt{A}_I$.
 \end{thm}
@@ -434,7 +482,8 @@ We initialize the program with $\tt{A}_I^0 = \tt{A}^0 = \tt{A}_\exists^0 = \tt{A
 First, consider the instantiated forward rule $\tt{B}_I \tt{ <= f(A$_I$)}$, which only alters $\tt{B}_I$ and can be expressed as $\tt{B}_I^t = \tt{B}_I^{t-1} \cup \tt{f(A$_I^{t-1}$)}$.
 \begin{align*}
 \tt{B}_\exists^t
-&= \tt{B}_\exists^{t-1} \cup \tt{f(A$_\exists^{t-1}$ $\cup$ A$_\top^{t-1}$)} - \tt{B}_\top^{t-1}\\
+&= (\tt{B}_\exists^{t-1} \cup \tt{f(A$_\exists^{t-1}$ $\cup$ A$_\top^{t-1}$)}) - \tt{B}_\top^{t-1}\\
+&= (\tt{B}_\exists^{t-1} \cup \tt{f(A$_\exists^{t-1}$ $\cup$ A$_\top^{t-1}$)} \cup \tt{B}_\top^{t-1}) - \tt{B}_\top^{t-1}\\
 &= \tt{B}_\exists^{t-1} \cup \tt{f(A$_I^{t-1}$)} - \tt{B}_\top^{t-1} && \text{(Thm \ref{thm:gcinv})} \\
 &\subseteq \tt{B}_I^{t-1} \cup \tt{f(A$_I^{t-1}$)}
 &&= \tt{B}_I^t\\
@@ -444,15 +493,27 @@ First, consider the instantiated forward rule $\tt{B}_I \tt{ <= f(A$_I$)}$, whic
 &=\tt{B}_\exists^{t-1} \cup \tt{B}_\top^{t-1}
 \end{align*}
 
+For the augmented forward rule, we have
+\begin{align*}
+\tt{B}^t\tt{.k}
+&= \tt{B}^{t-1}\tt{.k} \cup \tt{f}(\tt{A}^{t-1}_I)\tt{.k}\\
+&= \pi_k(\tt{B}^{t-1}_\exists \cup \tt{B}^{t-1}_\top) \cup \pi_k(f(\tt{A}^{t-1}_I))\\
+&= \pi_k(\tt{B}^{t-1}_\exists \cup \tt{B}^{t-1}_\top \cup f(\tt{A}^{t-1}_I))\\
+&= \pi_k(\tt{B}^{t-1}_\exists \cup \tt{B}^{t-1}_\top \cup f(\tt{A}^{t-1}_\exists \tt{A}^{t-1}_\top))\\
+&= \pi_k(\tt{B}^t_\exists \cup \tt{B}^t_\top).
+\end{align*}
+
 Next we show that the instantiated GC rule maintains the invariant.
 \begin{align*}
 \tt{A}_\exists^t 
-&= \tt{A}_\exists^{t-1} - \tilde{\tt{A}}\\
+&= \tt{A}_\exists^{t-1} - \widetilde{\tt{A}}\\
 &\subseteq \tt{A}_I^{t-1} - \tt{GCI(A$_I$, f, B$_I$)} & \text{(Property \ref{prp:gcisafe})}\\
 &= \tt{A}_I^t\\
 &\subseteq \tt{A}_\exists^{t-1} \cup \tt{A}_\top^{t-1}\\
 &= \tt{A}_\exists^t \cup \tt{A}_\top^t & \text{(Property \ref{prp:gcrconserve})}
 \end{align*}
+
+For the augmented GC rule, we have $\tt{A}^t\tt{.k} = \tt{A}^{t-1}\tt{.k} = \pi_k(\tt{A}^{t-1}_\exists \cup \tt{A}^{t-1}_\top) = \pi_k(\tt{A}^t_\exists \cup \tt{A}^t_\top)$.
 
 Lastly, we consider the merge $\tt{A}_I^t = \tt{A}_I^{t-1} \cup \tt{A}_I^{\prime(t-1)}$ with the corresponding merge $\tt{A}_\text{TS}^t = \tt{A}_\text{TS}^{t-1} \sqcup \tt{A}_\text{TS}^{\prime(t-1)}$.
 \begin{align*}
@@ -490,49 +551,49 @@ Thus,
 so $\tt{GCIcopy}$ satisfies the Instantiated GC Safe Deletion Property \ref{prp:gcisafe}.
 
 \begin{example}[Instantiated Max GC]
-$\tt{GCImax(A$_I$, f, B$_I$)} = \tilde{\tt{A}}$, where $\tilde{\tt{A}} \subseteq \tt{A}_I$ is a set satisfying
+$\tt{GCImax(A$_I$, f, B$_I$)} = \widetilde{\tt{A}}$, where $\widetilde{\tt{A}} \subseteq \tt{A}_I$ is a set satisfying
 \begin{align}
-\forall\hat{\tt{A}} \supseteq \tt{A}_I - \tilde{\tt{A}},
-\quad \tt{f($\hat{\tt{A}}$)} \cup \tt{B}_I = \tt{f($\hat{\tt{A}}$ $\cup$ $\tilde{\tt{A}}$)} \cup \tt{B}_I,\label{eq:gcimax1}
+\forall\widehat{\tt{A}} \supseteq \tt{A}_I - \widetilde{\tt{A}},
+\quad \tt{f($\widehat{\tt{A}}$)} \cup \tt{B}_I = \tt{f($\widehat{\tt{A}}$ $\cup$ $\widetilde{\tt{A}}$)} \cup \tt{B}_I,\label{eq:gcimax1}
 \end{align}
 and for all $\tt{A}_\text{TS}'$ satisfying the GC Invariant \ref{inv:gci} Eq \ref{eq:gcinv1},\label{eq:gcimax2}
 \begin{align}
-\forall \hat{\tt{A}} \supseteq \tt{A}_I \cup \tt{A}_\exists' - (\tilde{\tt{A}} \cup \tt{A}_\top'),
-\quad \tt{f($\hat{\tt{A}}$)} \cup \tt{B}_I = \tt{f($\hat{\tt{A}}$ $\cup$ $\tilde{\tt{A}}$ $\cup$ \tt{A}$_\top'$)} \cup \tt{B}_I
+\forall \widehat{\tt{A}} \supseteq \tt{A}_I \cup \tt{A}_\exists' - (\widetilde{\tt{A}} \cup \tt{A}_\top'),
+\quad \tt{f($\widehat{\tt{A}}$)} \cup \tt{B}_I = \tt{f($\widehat{\tt{A}}$ $\cup$ $\widetilde{\tt{A}}$ $\cup$ \tt{A}$_\top'$)} \cup \tt{B}_I
 \end{align}
 \end{example}
 We first point out that the $\tt{GCImax}$ rule does not require knowledge of the value of any actual $\tt{A}_\text{TS}'$, as it has to hold true for \textit{all} such sets.
 
-Next, we show that $\tilde{\tt{A}} \cup \tt{A}_\top$ satisfies conditions Eq \eqref{eq:maxgc1} and \eqref{eq:maxgc2}.
+Next, we show that $\widetilde{\tt{A}} \cup \tt{A}_\top$ satisfies conditions Eq \eqref{eq:maxgc1} and \eqref{eq:maxgc2}.
 The first condition Eq \eqref{eq:gcimax1}, together with the fact that $\tt{B}_I \subseteq \tt{B}_\top \cup \tt{B}_\exists$ implies that
 \begin{align*}
-\forall\hat{\tt{A}} \supseteq \tt{A}_I - \tilde{\tt{A}},
-\quad \tt{f($\hat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top = \tt{f($\hat{\tt{A}}$ $\cup$ $\tilde{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top,
+\forall\widehat{\tt{A}} \supseteq \tt{A}_I - \widetilde{\tt{A}},
+\quad \tt{f($\widehat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top = \tt{f($\widehat{\tt{A}}$ $\cup$ $\widetilde{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top,
 \end{align*}
-so $(\emptyset, \tt{A}_I - \tilde{\tt{A}}, \tilde{\tt{A}})$ satisfy GC Invariant \ref{inv:gci} Eq \ref{eq:gcinv1}.
+so $(\emptyset, \tt{A}_I - \widetilde{\tt{A}}, \widetilde{\tt{A}})$ satisfy GC Invariant \ref{inv:gci} Eq \ref{eq:gcinv1}.
 Applying Eq \ref{eq:gcinv2}, we get
 \begin{align*}
-&\forall \hat{\tt{A}}
-  ~~\supseteq~~ \tt{A}_\exists \cup (\tt{A}_I - \tilde{\tt{A}}) - (\tt{A}_\top \cup \tilde{\tt{A}})
-  ~~=~~ \tt{A}_\exists - (\tt{A}_\top \cup \tilde{\tt{A}}),\\
-&\tt{f($\hat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top
-  ~~=~~ \tt{f($\hat{\tt{A}}$ $\cup$ A$_\top$ $\cup$ $\tilde{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top,
+&\forall \widehat{\tt{A}}
+  ~~\supseteq~~ \tt{A}_\exists \cup (\tt{A}_I - \widetilde{\tt{A}}) - (\tt{A}_\top \cup \widetilde{\tt{A}})
+  ~~=~~ \tt{A}_\exists - (\tt{A}_\top \cup \widetilde{\tt{A}}),\\
+&\tt{f($\widehat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top
+  ~~=~~ \tt{f($\widehat{\tt{A}}$ $\cup$ A$_\top$ $\cup$ $\widetilde{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top,
 \end{align*}
-thus satisfying Eq \eqref{eq:maxgc1} with tombstones $\tilde{\tt{A}} \cup \tt{A}_\top$. Similarly, Eq \eqref{eq:gcimax2} implies
+thus satisfying Eq \eqref{eq:maxgc1} with tombstones $\widetilde{\tt{A}} \cup \tt{A}_\top$. Similarly, Eq \eqref{eq:gcimax2} implies
 \begin{align}
-\forall \hat{\tt{A}} \supseteq \tt{A}_I \cup \tt{A}_\exists' - (\tilde{\tt{A}} \cup \tt{A}_\top'),
-\quad \tt{f($\hat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top = \tt{f($\hat{\tt{A}}$ $\cup$ $\tilde{\tt{A}}$ $\cup$ \tt{A}$_\top'$)} \cup \tt{B}_\exists \cup \tt{B}_\top,
+\forall \widehat{\tt{A}} \supseteq \tt{A}_I \cup \tt{A}_\exists' - (\widetilde{\tt{A}} \cup \tt{A}_\top'),
+\quad \tt{f($\widehat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top = \tt{f($\widehat{\tt{A}}$ $\cup$ $\widetilde{\tt{A}}$ $\cup$ \tt{A}$_\top'$)} \cup \tt{B}_\exists \cup \tt{B}_\top,
 \end{align}
-so $(\emptyset, \tt{A}_I \cup \tt{A}_\exists' - (\tilde{\tt{A}} \cup \tt{A}_\top'), \tilde{\tt{A}} \cup \tt{A}_\top')$ satisfy GC Invariant \ref{inv:gci} Eq \ref{eq:gcinv1}.
+so $(\emptyset, \tt{A}_I \cup \tt{A}_\exists' - (\widetilde{\tt{A}} \cup \tt{A}_\top'), \widetilde{\tt{A}} \cup \tt{A}_\top')$ satisfy GC Invariant \ref{inv:gci} Eq \ref{eq:gcinv1}.
 Applying Eq \ref{eq:gcinv2}, we get
 \begin{align*}
-&\forall \hat{\tt{A}}
-  ~~\supseteq~~ \tt{A}_\exists \cup (\tt{A}_I \cup \tt{A}_\exists' - (\tilde{\tt{A}} \cup \tt{A}_\top')) - (\tt{A}_\top \cup \tilde{\tt{A}} \cup \tt{A}_\top')
-  ~~=~~ \tt{A}_\exists \cup \tt{A}_\exists' - (\tt{A}_\top \cup \tilde{\tt{A}} \cup \tt{A}_\top'),\\
-&\tt{f($\hat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top = \tt{f($\hat{\tt{A}}$ $\cup$ A$_\top$ $\cup$ $\tilde{\tt{A}}$ $\cup$ \tt{A}$_\top'$)} \cup \tt{B}_\exists \cup \tt{B}_\top
+&\forall \widehat{\tt{A}}
+  ~~\supseteq~~ \tt{A}_\exists \cup (\tt{A}_I \cup \tt{A}_\exists' - (\widetilde{\tt{A}} \cup \tt{A}_\top')) - (\tt{A}_\top \cup \widetilde{\tt{A}} \cup \tt{A}_\top')
+  ~~=~~ \tt{A}_\exists \cup \tt{A}_\exists' - (\tt{A}_\top \cup \widetilde{\tt{A}} \cup \tt{A}_\top'),\\
+&\tt{f($\widehat{\tt{A}}$)} \cup \tt{B}_\exists \cup \tt{B}_\top = \tt{f($\widehat{\tt{A}}$ $\cup$ A$_\top$ $\cup$ $\widetilde{\tt{A}}$ $\cup$ \tt{A}$_\top'$)} \cup \tt{B}_\exists \cup \tt{B}_\top
 \end{align*}
-thus satisfying Eq \eqref{eq:maxgc2} with tombstones $\tilde{\tt{A}} \cup \tt{A}_\top$.
-We have therefore shown that $\tt{GCImax(A$_I$, f, B$_I$)} = \tilde{\tt{A}} \subseteq \tilde{\tt{A}} \cup \tt{A}_\top \subseteq \tt{GCmax(A$_\text{TS}$, f, B$_\text{TS}$)}$ due to the maximality of $\tt{GCmax}$.
+thus satisfying Eq \eqref{eq:maxgc2} with tombstones $\widetilde{\tt{A}} \cup \tt{A}_\top$.
+We have therefore shown that $\tt{GCImax(A$_I$, f, B$_I$)} = \widetilde{\tt{A}} \subseteq \widetilde{\tt{A}} \cup \tt{A}_\top \subseteq \tt{GCmax(A$_\text{TS}$, f, B$_\text{TS}$)}$ due to the maximality of $\tt{GCmax}$.
 
 \begin{example}[Instantiated Tuple-based GC]
 $\tt{GCItuple(A$_I$, f, B$_I$)} = \{t \in \tt{A}_I ~:~ \forall \tt{X}, \tt{f(X $\cup$ $\{t\}$)} - \tt{f(X)} \subseteq \tt{B}_I\}$
@@ -541,6 +602,117 @@ $\tt{GCItuple(A$_I$, f, B$_I$)} = \{t \in \tt{A}_I ~:~ \forall \tt{X}, \tt{f(X $
 \subsection{Putting it together}
 Our instantiated representation preserves correctness, and allows for GC opportunities.
 While it is not monotone in the representation, it tracks the monotone logical program, and thus our GC operations can be performed coordination-free.
+
+\section{Concrete Rules}
+
+\subsection{DR+}
+The DR+ technique reclaims storage whenever a set difference is observed in the Bloom program.
+Specifically, we identify patterns of the form
+\begin{align*}
+\tt{Z <= X.notin(Y, :kx => :ky)}
+\end{align*}
+Letting $\widetilde{\tt{X}} = ((\tt{X}_\exists \cup \tt{X}_\top) \ast (\tt{Y}_\exists \cup \tt{Y}_\top))\tt{.lefts}(\tt{:kx => :ky})$,
+the logical reclamation rule is
+\begin{align}
+\tt{Z}_\text{TS} &\tt{ <= } (\tt{X}_\exists \cup \tt{X}_\top)\tt{.notin}(\tt{Y}_\exists \cup \tt{Y}_\top, \tt{:kx => :ky})\\
+\tt{X}_\text{TS} &\tt{ <= } (\emptyset, \tt{X}_\exists - \widetilde{\tt{X}}, \tt{X}_\top \cup \widetilde{\tt{X}}) \label{eq:drpluslogical}
+\end{align}
+and the instantiated reclamation rule is
+\begin{align}
+\tt{Z}_I &\tt{ <= } \tt{X}_I\tt{.notin}(\tt{Y}_I, \tt{:kx => :ky})\\
+\tt{X}_I &\tt{ <\# } (\tt{X}_I \ast \tt{Y}_I)\tt{.lefts}(\tt{:kx -> :ky}). \label{eq:drplusinstantiated}
+\end{align}
+
+It is easy to show that the logical rule Eq \eqref{eq:drpluslogical} is monotone and conservative.
+We also claim that the GC Invariant \ref{inv:gci} Eq \eqref{eq:gcinv1} reduces to
+\begin{align*}
+\tt{X}_\top\tt{.notin}(\tt{Y}_\exists \cup \tt{Y}_\top, \tt{:kx => :ky}) = \emptyset,
+\end{align*}
+and GC Invariant \ref{inv:gci} Eq \eqref{eq:gcinv2} reduces to if $(\tt{X}_\text{TS}, \tt{Y}_\text{TS})$ and $(\tt{X}_\text{TS}', \tt{Y}_\text{TS}')$ satisfy Eq \eqref{eq:gcimax1}, then
+\begin{align*}
+(\tt{X}_\top \cup \tt{X}_\top')\tt{.notin}(\tt{Y}_\exists \cup \tt{Y}_\top \cup \tt{Y}_\exists' \cup \tt{Y}_\top', \tt{:kx => :ky}) = \emptyset.
+\end{align*}
+
+We now show that the logical $\tt{GC}$ rule satisfies Eq \eqref{eq:maxgc1} and Eq \eqref{eq:maxgc2}:
+\begin{align*}
+&\tt{X}_\top^t\tt{.notin}(\tt{Y}_\exists^t \cup \tt{Y}_\top^t, \tt{:kx => :ky})\\
+&= (\tt{X}_\top^{t-1} \cup \widetilde{\tt{X}})\tt{.notin}(\tt{Y}_\exists^{t-1} \cup \tt{Y}_\top^{t-1}, \tt{:kx => :ky})\\
+&= \widetilde{\tt{X}}\tt{.notin}(\tt{Y}_\exists^{t-1} \cup \tt{Y}_\top^{t-1}, \tt{:kx => :ky})\\
+&= ((\tt{X}_\exists^{t-1} \cup \tt{X}_\top^{t-1}) \ast (\tt{Y}_\exists^{t-1} \cup \tt{Y}_\top^{t-1]}))\tt{.lefts}(\tt{:kx => :ky})\tt{.notin}(\tt{Y}_\exists^{t-1} \cup \tt{Y}_\top^{t-1}, \tt{:kx => :ky})\\
+&= \emptyset,
+\end{align*}
+\begin{align*}
+&(\tt{X}_\top^t \cup \tt{X}_\top'^t)\tt{.notin}(\tt{Y}_\exists^t \cup \tt{Y}_\top^t \cup \tt{Y}_\exists'^t \cup \tt{Y}_\top'^t, \tt{:kx => :ky})\\
+&\subseteq \tt{X}_\top^t \tt{.notin}(\tt{Y}_\exists^t \cup \tt{Y}_\top^t, \tt{:kx => :ky}) ~~\cup~~ \tt{X}_\top'^t\tt{.notin}(\tt{Y}_\exists'^t \cup \tt{Y}_\top'^t, \tt{:kx => :ky})\\
+&= \emptyset.
+\end{align*}
+
+Furthermore, we can show that the DR+ rule is a max GC rule.
+For, AFSOC that some $\widetilde{\tt{W}} \not\subseteq \widetilde{\tt{X}}$, then there is some $w \in \widetilde{\tt{W}} \subseteq (\tt{X}_\exists \cup \tt{X}_\top)$ such that $w \not\in \widetilde{\tt{X}}$ but also $\{w\}\tt{.notin}(\tt{Y}_\exists \cup \tt{Y}_\top, \tt{:kx => :ky}) = \emptyset$.
+But that would imply $w \in ((\tt{X}_\exists \cup \tt{X}_\top) \ast (\tt{Y}_\exists \cup \tt{Y}_\top))\tt{.lefts}(\tt{:kx => :ky}) = \widetilde{\tt{X}}$.
+
+It remains to show that the instantiated GC rule satisfies the Instantiated GC Safe Deletion Property \ref{prp:gcisafe}, which follows straightforwardly from the fact that $\tt{X}_I \subseteq \tt{X}_\exists \cup \tt{X}_\top$ and $\tt{Y}_I \subseteq \tt{Y}_\exists \cup \tt{Y}_\top$:
+\begin{align*}
+(\tt{X}_I \ast \tt{Y}_I)\tt{.lefts}(\tt{:kx => :ky})
+&\subseteq ((\tt{X}_\exists \cup \tt{X}_\top) \ast (\tt{Y}_\exists \cup \tt{Y}_\top))\tt{.lefts}(\tt{:kx => :ky})
+\end{align*}
+
+Observe that we do not have to prove that the output of $\tt{Z}$ is consistent with the original program --- this is guaranteed by our invariants and Representation Correctness Thm \ref{thm:representationcorrectness}.
+
+
+% \subsection{DR-}
+% DR- is also a GC rule for the $\tt{notin}$ pattern $\tt{Z} \tt{ <= } \tt{X}\tt{.notin}(\tt{Y}, \tt{:kx => :ky})$, but where $\tt{kx}$ is the primary key of $\tt{X}$.
+% This allows for an opportunity to reclaim from $\tt{Y}$ as well: once a tuple in $\tt{X}$ is tombstoned, we can also tombstone its counterpart in $\tt{Y}$.
+
+% The logical reclamation rules are
+% \begin{align*}
+% \tt{X}_\text{TS} &\tt{ <= } (\emptyset, \tt{X}_\exists - \widetilde{\tt{X}}, \tt{X}_\top \cup \widetilde{\tt{X}})\\
+% \tt{Y}_\text{TS} &\tt{ <= } (\emptyset, \tt{Y}_\exists - \widetilde{\tt{Y}}, \tt{Y}_\top \cup \widetilde{\tt{Y}})
+% \end{align*}
+% where
+% \begin{align*}
+% \widetilde{\tt{X}} &= ((\tt{X}_\exists \cup \tt{X}_\top) \ast (\tt{Y}_\exists \cup \tt{Y}_\top))\tt{.lefts}(\tt{:kx => :ky}),\\
+% \widetilde{\tt{Y}} &= (\tt{X}_\top \ast (\tt{Y}_\exists \cup \tt{Y}_\top))\tt{.rights}(\tt{:kx => :ky}).
+% \end{align*}
+% We use the augmented representation for $\tt{X}$, which allows us to identify keys of tombstoned $\tt{X}$ tuples.
+% The corresponding instantiated GC rules are
+% \begin{align*}
+% \tt{GCX}(\tt{X}_+, \tt{Y}_I, \tt{f}, \tt{Z}_I) &= (\tt{X}_I \ast \tt{Y}_I)\tt{.lefts}(\tt{:kx => :ky})\\
+% \tt{GCY}(\tt{X}_+, \tt{Y}_I, \tt{f}, \tt{Z}_I) &= (\tt{Y}_I \ast (\tt{X.k}\tt{.notin}(\tt{X}_I, \tt{:kx => :kx})))\tt{.lefts}(\tt{:kx => :ky})
+% \end{align*}
+
+% Since the reclamation rules for $\tt{X}$ are essentially the same as for DR+, we will not repeat the analysis here.
+
+% We now show that the logical GC rule for $\tt{Y}$ is a specific case of the $\tt{GCmax}$ rule.
+% First, consider any $\widehat{\tt{X}} \supseteq \tt{X}_\exists$ and $\widehat{\tt{Y}} \supseteq \tt{Y}_\exists - \widetilde{\tt{Y}}$.
+% Then,
+% \begin{align*}
+% \widehat{\tt{X}}\tt{.notin}(\widehat{\tt{Y}})
+% &=
+% \\&= \widehat{\tt{X}}\tt{.notin}(\widehat{\tt{Y}} \cup \tt{Y}_\top \cup \widetilde{\tt{Y}})\\
+% &= (\widehat{\tt{X}} \cup \tt{X}_\top)\tt{.notin}(\widehat{\tt{Y}} \cup \tt{Y}_\top \cup \widetilde{\tt{Y}}) & \text{(GC Invariant on \tt{X})}\\
+% \end{align*}
+
+
+\subsection{Joins with punctuations}
+
+\begin{align*}
+\{x \in \tt{X}_\exists \cup \tt{X}_\top ~:~ \exists p \in \tt{Py} \text{ s.t. } (p.k = x.k) \wedge ((x \ast p.y) \in (\tt{Z}_\exists \cup \tt{Z}_\top))\}\\
+\{y \in \tt{Y}_\exists \cup \tt{Y}_\top ~:~ \exists p \in \tt{Px} \text{ s.t. } (p.k = y.k) \wedge ((y \ast p.x) \in (\tt{Z}_\exists \cup \tt{Z}_\top))\}\\
+\end{align*}
+
+\begin{align*}
+\tt{GCX}(\tt{X}_I, \tt{Y}_I, \tt{Px}, \tt{Py}, \tt{join}, \tt{Z}_I) &= \{x \in \tt{X}_I ~:~ \exists p \in \tt{Py} \text{ s.t. } (p.k = x.k) \wedge ((x \ast p.y) \in \tt{Z}_I)\}\\
+\tt{GCY}(\tt{X}_I, \tt{Y}_I, \tt{Px}, \tt{Py}, \tt{join}, \tt{Z}_I) &= \{y \in \tt{Y}_I ~:~ \exists p \in \tt{Px} \text{ s.t. } (p.k = y.k) \wedge ((y \ast p.x) \in \tt{Z}_I)\}\\
+\end{align*}
+
+\begin{align*}
+\tt{GC}(\tt{X}_I, \tt{Y}_I, \tt{Px}, \tt{Py}, \tt{join}, \tt{Z}_I)
+\end{align*}
+
+
+
+
 
 %\end{document}  % This is where a 'short' article might terminate
 \newpage
